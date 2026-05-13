@@ -109,11 +109,12 @@ test "configure reporter used by isolated Verity.run" do
           c.manifest_path = ":memory:"
           c.reporter = rep
         end
-        exit(Verity.run ? 0 : 1)
-      end
-      unless events == [[:start, 1, 0], [:ex, :pass, 0], [:finish, 1, 0]]
-        warn events.inspect
-        exit(1)
+        result = Verity.run
+        unless events == [[:start, 1, 0], [:ex, :pass, 0], [:finish, 1, 0]]
+          warn events.inspect
+          exit(1)
+        end
+        exit(result ? 0 : 1)
       end
     RUBY
 

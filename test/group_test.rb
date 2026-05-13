@@ -90,7 +90,7 @@ class GroupTest < Minitest::Test
   def test_documentation_reporter_prints_group_headers
     reset_verity_process_state!
     io = StringIO.new
-    rep = Verity::Reporters::DocumentationReporter.new(io)
+    rep = Verity::Reporters::DocumentationReporter.new(io, color: false)
     a = Verity::Test.new(
       fingerprint: "a.rb:#{'a' * 16}",
       description: "one",

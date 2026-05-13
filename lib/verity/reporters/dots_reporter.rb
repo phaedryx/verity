@@ -2,13 +2,19 @@
 
 module Verity
   module Reporters
+    # Public: Minimal reporter that prints a single character per test:
+    # "." for pass, "F" for failure, "E" for error. No color.
     class DotsReporter
       include Verity::Reporter
 
+      # Public: Create a new DotsReporter.
+      #
+      # io - IO object for output (default $stdout).
       def initialize(io = $stdout)
         @io = io
       end
 
+      # Public: Print a dot, F, or E for the completed test.
       def on_test_complete(result:, worker_id:)
         char =
           case result.status
@@ -20,6 +26,7 @@ module Verity
         @io.flush
       end
 
+      # Public: Print the final summary line with counts.
       def on_run_finish(summary:, worker_id:)
         t = summary[:total]
         p = summary[:passed]
@@ -31,6 +38,7 @@ module Verity
         @io.puts line
       end
 
+      # Public: Delegate to ParallelSummaryReporter for the multi-worker summary.
       def on_parallel_complete(counts:, problem_rows:)
         ParallelSummaryReporter.new(@io).emit(counts:, problem_rows:)
       end

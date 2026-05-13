@@ -13,6 +13,7 @@ class BuildReporterTest < Minitest::Test
     assert_instance_of Verity::Reporters::DotsReporter, Verity.build_reporter("dots")
     assert_instance_of Verity::Reporters::NullReporter, Verity.build_reporter("null")
     assert_instance_of Verity::Reporters::NullReporter, Verity.build_reporter("silent")
+    assert_instance_of Verity::Reporters::NullReporter, Verity.build_reporter("none")
   end
 
   def test_blank_raises

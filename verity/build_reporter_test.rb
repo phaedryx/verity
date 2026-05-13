@@ -19,6 +19,7 @@ end
 test "build_reporter null aliases" do
   assert Verity.build_reporter("null").is_a?(Verity::Reporters::NullReporter)
   assert Verity.build_reporter("silent").is_a?(Verity::Reporters::NullReporter)
+  assert Verity.build_reporter("none").is_a?(Verity::Reporters::NullReporter)
 end
 
 test "build_reporter blank raises" do

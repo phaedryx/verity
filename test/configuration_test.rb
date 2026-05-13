@@ -56,6 +56,20 @@ class ConfigurationTest < Minitest::Test
     assert_equal expected, Verity.configuration.resolved_worker_count
   end
 
+  def test_resolved_worker_count_accepts_cpu_singular_symbol
+    reset_verity_configuration_only!
+    Verity.configure { |c| c.worker_count = :cpu }
+    expected = [Etc.nprocessors, 1].max
+    assert_equal expected, Verity.configuration.resolved_worker_count
+  end
+
+  def test_resolved_worker_count_accepts_cpu_singular_string
+    reset_verity_configuration_only!
+    Verity.configure { |c| c.worker_count = "cpu" }
+    expected = [Etc.nprocessors, 1].max
+    assert_equal expected, Verity.configuration.resolved_worker_count
+  end
+
   def test_resolved_worker_count_rejects_invalid_value
     reset_verity_configuration_only!
     Verity.configure { |c| c.worker_count = :invalid }

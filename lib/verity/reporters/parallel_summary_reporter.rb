@@ -2,12 +2,22 @@
 
 module Verity
   module Reporters
-    # Emits the multi-worker summary block (typically from a reporter's +on_parallel_complete+).
+    # Internal: Shared helper that emits the multi-worker summary block.
+    # Typically called from a reporter's on_parallel_complete to print
+    # aggregate counts and list any failures or errors from the manifest.
     class ParallelSummaryReporter
       def initialize(io = $stdout)
         @io = io
       end
 
+      # Public: Write the parallel-run summary to the IO stream.
+      #
+      # counts       - Hash with String status keys ("passed", "failed", etc.)
+      #                and Integer counts.
+      # problem_rows - Array of Hashes with :fingerprint, :description, :status,
+      #                and :failure from Manifest#failures_for_report.
+      #
+      # Returns nothing.
       def emit(counts:, problem_rows:)
         passed = counts.fetch("passed", 0)
         failed = counts.fetch("failed", 0)

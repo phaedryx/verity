@@ -1,17 +1,40 @@
 # frozen_string_literal: true
 
 module Verity
+  # Public: Executes tests, fires reporter hooks, and records results back to
+  # the manifest. A single Runner instance services one worker process.
   class Runner
+    # Public: Immutable outcome of running a single test.
+    #
+    # test   - The Verity::Test that was executed.
+    # status - Symbol :pass, :fail, :error, or :skip.
+    # error  - Exception instance or nil.
     Result = Data.define(:test, :status, :error)
 
+    # Public: Create a new Runner.
+    #
+    # reporter - Object implementing Verity::Reporter (default: from configuration).
     def initialize(reporter: nil)
       @reporter = reporter || Verity.configuration.reporter
     end
 
+    # Public: Run a list of tests in-process without a manifest. Primarily
+    # used for simple single-worker execution.
+    #
+    # tests - Array of Verity::Test (default: all registered tests).
+    #
+    # Returns true if every test passed.
     def run(tests = Registry.all)
       run_worker(tests, worker_id: 0)
     end
 
+    # Public: Claim and execute tests from a shared manifest until none remain.
+    # Fires before_worker_start hooks, then loops claim_next until exhausted.
+    #
+    # manifest  - A Verity::Manifest instance.
+    # worker_id - Integer identifying this worker.
+    #
+    # Returns true if every executed test passed.
     def run_manifest(manifest, worker_id:)
       Verity.hooks[:before_worker_start].each(&:call)
 

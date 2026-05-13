@@ -35,6 +35,24 @@ ensure
   Verity.reset_configuration!
 end
 
+test "resolved_worker_count matches Etc.nprocessors for :cpu singular" do
+  Verity.reset_configuration!
+  Verity.configure { |c| c.worker_count = :cpu }
+  expected = [Etc.nprocessors, 1].max
+  assert_equal actual: Verity.configuration.resolved_worker_count, expected: expected
+ensure
+  Verity.reset_configuration!
+end
+
+test "resolved_worker_count matches Etc.nprocessors for cpu singular string" do
+  Verity.reset_configuration!
+  Verity.configure { |c| c.worker_count = "cpu" }
+  expected = [Etc.nprocessors, 1].max
+  assert_equal actual: Verity.configuration.resolved_worker_count, expected: expected
+ensure
+  Verity.reset_configuration!
+end
+
 test "resolved_worker_count rejects invalid worker_count" do
   Verity.reset_configuration!
   Verity.configure { |c| c.worker_count = :not_a_number }

@@ -2,7 +2,9 @@
 
 module Verity
   module Reporters
-    # Like {DotsReporter}, but uses ANSI colors when enabled (TTY, no +NO_COLOR+, or +FORCE_COLOR+ / +VERITY_FORCE_COLOR+).
+    # Public: Like DotsReporter, but uses ANSI colors when outputting to a TTY.
+    # Green for pass, red for failure, yellow for error. Respects NO_COLOR,
+    # FORCE_COLOR, and VERITY_FORCE_COLOR environment variables.
     class ColoredDotsReporter < DotsReporter
       ESC = "\e["
       RESET = "#{ESC}0m"
@@ -10,13 +12,16 @@ module Verity
       FAIL = "#{ESC}31m"
       ERR = "#{ESC}33m"
 
-      # @param io [IO]
-      # @param color [true, false, nil] +nil+ means auto-detect from TTY and environment
+      # Public: Create a new ColoredDotsReporter.
+      #
+      # io    - IO object for output (default $stdout).
+      # color - Boolean to force color on/off, or nil for auto-detect.
       def initialize(io = $stdout, color: nil)
         super(io)
         @color_override = color
       end
 
+      # Public: Print a colored dot, F, or E for the completed test.
       def on_test_complete(result:, worker_id:)
         char, sequence =
           case result.status

@@ -2,7 +2,10 @@
 
 module Verity
   module Reporters
-    # Prints one line per example with optional ANSI colors ("pass" green, "FAIL" red, "skip" yellow, "ERROR" magenta) when enabled (TTY, no +NO_COLOR+, or +FORCE_COLOR+ / +VERITY_FORCE_COLOR+).
+    # Public: Verbose reporter that prints one indented line per test, nesting
+    # output under group headers. Uses ANSI colors (green/red/yellow/magenta)
+    # when outputting to a TTY, unless suppressed by NO_COLOR or forced via
+    # FORCE_COLOR / VERITY_FORCE_COLOR.
     class DocumentationReporter
       include Verity::Reporter
 
@@ -13,11 +16,16 @@ module Verity
       SKIP_STYLE = "#{ESC}33m"
       ERROR_STYLE = "#{ESC}35m"
 
+      # Public: Create a new DocumentationReporter.
+      #
+      # io    - IO object for output (default $stdout).
+      # color - Boolean to force color on/off, or nil for auto-detect.
       def initialize(io = $stdout, color: nil)
         @io = io
         @color_override = color
       end
 
+      # Public: Print a "Running N tests..." header.
       def on_run_start(total:, worker_id:)
         @last_group_path = nil
         return if total.nil?
@@ -26,6 +34,8 @@ module Verity
         @io.puts
       end
 
+      # Public: Print a status-labeled line for the completed test, indented
+      # under its group headers.
       def on_test_complete(result:, worker_id:)
         path = Array(result.test.group_path)
         emit_group_headers(path)
@@ -43,6 +53,7 @@ module Verity
         end
       end
 
+      # Public: Print the final summary line with counts and optional color.
       def on_run_finish(summary:, worker_id:)
         t = summary[:total]
         p = summary[:passed]
@@ -66,6 +77,7 @@ module Verity
         @io.puts line
       end
 
+      # Public: Delegate to ParallelSummaryReporter for the multi-worker summary.
       def on_parallel_complete(counts:, problem_rows:)
         ParallelSummaryReporter.new(@io).emit(counts:, problem_rows:)
       end

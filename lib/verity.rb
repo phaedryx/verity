@@ -17,20 +17,52 @@ require_relative "verity/runner"
 module Verity
   VERSION = "0.1.0"
 
+  # Public: Immutable value object representing a single registered test case.
+  #
+  # fingerprint          - String content-based identifier for the test body.
+  # description          - String human-readable name supplied to the `test` DSL.
+  # tags                 - Array of Symbols applied directly to the test.
+  # timeout              - Numeric seconds (or nil) before the test is killed.
+  # requires             - Array of Symbols naming shared preconditions.
+  # resources            - Hash of keyword resources forwarded from `test`.
+  # file                 - String absolute path of the source file.
+  # line                 - Integer source line number.
+  # fn                   - Proc (block) containing the test body.
+  # group_path           - Frozen Array of Strings representing nested group titles.
+  # inherited_group_tags - Frozen Array of Symbols from enclosing group tags.
   Test = Data.define(
     :fingerprint, :description, :tags, :timeout, :requires, :resources, :file, :line, :fn,
     :group_path, :inherited_group_tags
   )
 
-  # Tags from enclosing `group ...(tags:)` blocks plus the test's own `tags:` (outer groups first).
+  # Public: Compute all tags that apply to a test, combining enclosing group
+  # tags with the test's own tags (outer groups first).
+  #
+  # test - A Verity::Test instance.
+  #
+  # Returns an Array of Symbols.
   def self.effective_tags(test)
     Array(test.inherited_group_tags).map(&:to_sym) + Array(test.tags).map(&:to_sym)
   end
 
+  # Public: Check whether a test is tagged with :skip.
+  #
+  # test - A Verity::Test instance.
+  #
+  # Returns true if the test should be skipped.
   def self.skipped?(test) = effective_tags(test).include?(:skip)
 
+  # Public: Check whether a test is tagged with :focus.
+  #
+  # test - A Verity::Test instance.
+  #
+  # Returns true if the test has the focus tag.
   def self.focus_tag?(test) = effective_tags(test).include?(:focus)
 
+  # Public: Collect the tests that should actually execute. Skipped tests are
+  # excluded; when any remaining test has :focus, only focused tests are kept.
+  #
+  # Returns an Array of Verity::Test.
   def self.runnable_tests
     base = Registry.all.reject { skipped?(_1) }
     if base.any? { focus_tag?(_1) }
@@ -40,24 +72,41 @@ module Verity
     end
   end
 
-  # True when at least one non-skipped test has :focus and at least one runnable test does not
-  # (subset of the suite is selected).
+  # Public: Detect whether focus filtering narrowed the suite — at least one
+  # candidate has :focus and at least one does not.
+  #
+  # candidates - Array of Verity::Test (already excluding skipped tests).
+  #
+  # Returns true when the suite is a strict focus-filtered subset.
   def self.focus_filter_active?(candidates)
     return false if candidates.empty?
 
     candidates.any? { focus_tag?(_1) } && candidates.any? { !focus_tag?(_1) }
   end
 
+  # Internal: Push a group frame onto the current thread's group stack.
+  # Called by DSL#group during test file loading.
+  #
+  # title - String title for the group.
+  # tags  - Array of Symbols (default []).
+  #
+  # Returns the updated stack Array.
   def self.push_group(title, tags: [])
     entry = { title: title.to_s, tags: Array(tags).map(&:to_sym) }
     (Thread.current[:verity_group_stack] ||= []) << entry
   end
 
+  # Internal: Pop the most recent group frame from the current thread's stack.
+  #
+  # Returns the removed Hash entry, or nil.
   def self.pop_group
     Thread.current[:verity_group_stack]&.pop
   end
 
-  # Snapshot of nested `group` titles for the current thread.
+  # Internal: Snapshot of nested group titles for the current thread, used
+  # at registration time to capture a test's group ancestry.
+  #
+  # Returns a frozen Array of Strings.
   def self.group_path_for_registration
     stack = Thread.current[:verity_group_stack]
     return [].freeze if stack.nil? || stack.empty?
@@ -65,6 +114,10 @@ module Verity
     stack.map { _1[:title] }.freeze
   end
 
+  # Internal: Collect all tags from enclosing groups for the current thread,
+  # flattened in nesting order (outermost first).
+  #
+  # Returns a frozen Array of Symbols.
   def self.inherited_group_tags_for_registration
     stack = Thread.current[:verity_group_stack]
     return [].freeze if stack.nil? || stack.empty?
@@ -72,19 +125,32 @@ module Verity
     stack.flat_map { |g| g[:tags] }.freeze
   end
 
+  # Internal: Reset the current thread's group stack to empty. Called before
+  # loading each test file to prevent cross-file leakage.
+  #
+  # Returns an empty Array.
   def self.clear_group_stack!
     Thread.current[:verity_group_stack] = []
   end
 
-  # Resolve a reporter from a CLI or config string.
+  # Public: Resolve a reporter instance from a CLI or config string.
   #
-  # Built-in names (case-insensitive): +documentation+ (+doc+), +colored+ (+colored_dots+), +dots+, +null+ (+none+, +silent+).
-  # Custom: +"./path/to/reporter.rb:ClassName"+ or +"./path/to/reporter.rb:Mod::Klass"+ — uses Kernel#load then +.new+.
+  # Built-in names (case-insensitive): "documentation" ("doc"), "colored"
+  # ("colored_dots"), "dots", "null" ("none", "silent"). Custom reporters
+  # use the form "path/to/reporter.rb:ClassName".
   #
-  # Built-ins that write output use +$stdout+. The configuration default is {Reporters::ColoredDotsReporter}.
+  # spec - String reporter name or "path:ClassName" pair.
   #
-  # @param spec [String]
-  # @return [Object] instance suitable for {Configuration#reporter}
+  # Examples
+  #
+  #   Verity.build_reporter("dots")
+  #   # => #<Verity::Reporters::DotsReporter ...>
+  #
+  #   Verity.build_reporter("./my_reporter.rb:MyReporter")
+  #   # => #<MyReporter ...>
+  #
+  # Returns an Object that includes Verity::Reporter.
+  # Raises ArgumentError if the spec is blank or unrecognised.
   def self.build_reporter(spec)
     raise ArgumentError, "reporter name cannot be blank" if spec.nil? || spec.strip.empty?
 
@@ -141,18 +207,49 @@ module Verity
   end
   private_class_method :build_reporter_unknown_message
 
+  # Internal: Global test registry. Tests are appended during file loading
+  # and queried at run time by the Runner and manifest.
   module Registry
     @tests = []
 
+    # Internal: Add a test to the global registry.
+    #
+    # test - A Verity::Test instance.
+    #
+    # Returns the updated Array.
     def self.register(test) = @tests << test
+
+    # Internal: Return a shallow copy of all registered tests.
+    #
+    # Returns an Array of Verity::Test.
     def self.all = @tests.dup
+
+    # Internal: Remove every registered test. Used before re-loading files.
+    #
+    # Returns an empty Array.
     def self.clear = @tests.clear
+
+    # Internal: Look up a test by its fingerprint string.
+    #
+    # fingerprint - String fingerprint to match.
+    #
+    # Returns a Verity::Test or nil.
     def self.find(fingerprint) = @tests.find { |t| t.fingerprint == fingerprint }
   end
 
+  # Public: Methods mixed into Object so that `test` and `group` are
+  # available at the top level in test files.
   module DSL
     include Assertions
 
+    # Public: Define a named group of tests. Groups may be nested and
+    # contribute tags that are inherited by every enclosed test.
+    #
+    # title - String group name shown in reporter output.
+    # tags  - Array of Symbols applied to all tests in this group (default []).
+    # block - Block containing nested `test` and `group` calls.
+    #
+    # Raises ArgumentError if no block is given.
     def group(title, tags: [], &block)
       raise ArgumentError, "`group` requires a block" unless block
 
@@ -162,6 +259,17 @@ module Verity
       Verity.pop_group
     end
 
+    # Public: Register a single test case. The block is stored and executed
+    # later by the Runner.
+    #
+    # description - String human-readable test name.
+    # tags        - Array of Symbols (e.g. :focus, :skip) (default []).
+    # timeout     - Numeric seconds or nil for no timeout (default nil).
+    # requires    - Array of Symbols naming shared preconditions (default []).
+    # resources   - Hash of keyword arguments forwarded as resource metadata.
+    # fn          - Block containing assertions and test logic.
+    #
+    # Returns the newly registered Verity::Test.
     def test(description, tags: [], timeout: nil, requires: [], **resources, &fn)
       location = caller_locations(1, 1).first
       file = location.path
@@ -186,22 +294,59 @@ module Verity
     end
   end
 
+  # Public: Register a callback invoked once per worker process before any
+  # tests run (useful for DB setup, connection pooling, etc.).
+  #
+  # block - Proc to execute.
+  #
+  # Returns the updated callback Array.
   def self.before_worker_start(&block) = hooks[:before_worker_start] << block
+
+  # Public: Register a callback invoked before each individual test.
+  #
+  # block - Proc to execute.
+  #
+  # Returns the updated callback Array.
   def self.before_test(&block) = hooks[:before_test] << block
+
+  # Public: Register a callback invoked after each individual test.
+  #
+  # block - Proc to execute.
+  #
+  # Returns the updated callback Array.
   def self.after_test(&block) = hooks[:after_test] << block
 
+  # Public: Declare a named resource with conflict rules for parallel
+  # scheduling.
+  #
+  # name           - Symbol resource name.
+  # conflicts_with - Conflict specification stored for the scheduler.
+  #
+  # Returns the updated resolvers Hash.
   def self.register_resource(name, conflicts_with:)
     resource_resolvers[name] = conflicts_with
   end
 
+  # Internal: Lazily-initialised Hash of lifecycle hook Arrays keyed by
+  # :before_worker_start, :before_test, and :after_test.
+  #
+  # Returns a Hash.
   def self.hooks
     @hooks ||= { before_worker_start: [], before_test: [], after_test: [] }
   end
 
+  # Internal: Lazily-initialised Hash mapping resource names to their
+  # conflict specifications.
+  #
+  # Returns a Hash.
   def self.resource_resolvers
     @resource_resolvers ||= {}
   end
 
+  # Public: Discover and load all test files according to Configuration#test_globs.
+  # Clears the registry, installs fingerprint plans, and loads each file.
+  #
+  # Returns nothing meaningful.
   def self.load_discovery!
     Registry.clear
     configuration.test_files.each do |path|
@@ -216,6 +361,15 @@ module Verity
     end
   end
 
+  # Public: Main entry point — discover tests, set up the manifest, and
+  # execute. When worker_count > 1 the run forks child processes that each
+  # claim work from a shared SQLite manifest.
+  #
+  # worker_id - Integer base worker id for single-process mode (default 0).
+  #
+  # Returns true if every test passed, false otherwise.
+  # Raises ArgumentError if parallel mode uses a :memory: manifest.
+  # Raises NotImplementedError if fork is unavailable for parallel mode.
   def self.run(worker_id: 0)
     load_discovery!
 

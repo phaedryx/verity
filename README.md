@@ -4,7 +4,7 @@ Metadata-first Ruby tests: each case is a structured record (tags, timeouts, res
 
 ## Requirements
 
-- Ruby **≥ 3.2**
+- Ruby **≥ 3.3**
 
 ## Installation
 

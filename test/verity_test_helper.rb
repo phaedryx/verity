@@ -1,0 +1,14 @@
+# frozen_string_literal: true
+
+# Shared setup for Minitest suites (no ivars — call from the top of each test).
+module VerityTestHelper
+  def reset_verity_process_state!
+    Verity.reset_configuration!
+    Verity::Registry.clear
+    Verity.hooks.each_value(&:clear)
+  end
+
+  def reset_verity_configuration_only!
+    Verity.reset_configuration!
+  end
+end

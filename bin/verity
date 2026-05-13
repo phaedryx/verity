@@ -1,0 +1,50 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "optparse"
+
+$LOAD_PATH.unshift File.expand_path("../lib", __dir__)
+require "verity"
+
+begin
+  OptionParser.new do |o|
+    o.banner = "Usage: verity [options] [file-or-glob ...]"
+    o.separator ""
+    o.separator "If file-or-glob arguments are given, only those paths are loaded."
+    o.separator "Otherwise the configured default is used (see Verity::Configuration#test_globs)."
+    o.separator ""
+    o.on(
+      "-r",
+      "--reporter NAME",
+      "Output reporter: colored (default), colored_dots, dots, documentation, doc, null, none, silent;",
+      "or path/to/reporter.rb:ClassName for a custom class (include Verity::Reporter)."
+    ) do |name|
+      Verity.configure { |c| c.reporter = Verity.build_reporter(name) }
+    end
+    o.on(
+      "-w",
+      "--workers COUNT",
+      "Parallel worker processes: a positive integer or cpus (one worker per CPU via Etc.nprocessors)."
+    ) do |v|
+      Verity.configure { |c| c.worker_count = v.strip }
+    end
+    o.on("-h", "--help", "Show this help") do
+      puts o
+      exit 0
+    end
+  end.parse!
+
+  if ARGV.any?
+    Verity.configure { |c| c.test_globs = ARGV.map { File.expand_path(_1) } }
+  end
+rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
+  warn "verity: #{e.message}"
+  exit 2
+end
+
+begin
+  exit(Verity.run ? 0 : 1)
+rescue ArgumentError => e
+  warn "verity: #{e.message}"
+  exit 2
+end

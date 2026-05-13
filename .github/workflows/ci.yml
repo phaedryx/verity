@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ["3.2", "3.3", "3.4"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+
+      - name: Dogfood suite (bin/verity)
+        run: bundle exec ./bin/verity
+
+      - name: Minitest (test/)
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for f in test/*_test.rb; do
+            bundle exec ruby -Ilib:test "$f"
+          done

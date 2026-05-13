@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
 module Verity
-  # Hooks for test run lifecycle.
+  # Public: Interface module for test-run lifecycle hooks. Include this module
+  # and override the methods you need. All methods are no-ops by default.
   #
-  # Use a built-in under {Verity::Reporters}, or define your own:
+  # Examples
   #
   #   class MyReporter
   #     include Verity::Reporter
@@ -15,21 +16,39 @@ module Verity
   #
   #   Verity.configure { |c| c.reporter = MyReporter.new }
   module Reporter
-    # @param total [Integer, nil] expected examples in this process (nil if unknown)
-    # @param worker_id [Integer] manifest worker id
+    # Public: Called once when a worker begins its test run.
+    #
+    # total     - Integer expected number of examples, or nil if unknown.
+    # worker_id - Integer manifest worker id.
+    #
+    # Returns nothing.
     def on_run_start(total:, worker_id:); end
 
-    # @param result [Verity::Runner::Result] final status for one test
-    # @param worker_id [Integer]
+    # Public: Called after each individual test finishes.
+    #
+    # result    - Verity::Runner::Result with test, status, and error.
+    # worker_id - Integer manifest worker id.
+    #
+    # Returns nothing.
     def on_test_complete(result:, worker_id:); end
 
-    # @param summary [Hash] +:total+, +:passed+, +:failed+, +:errored+, +:skipped+, +:focus+ (boolean)
-    # @param worker_id [Integer]
+    # Public: Called once after all tests in a worker have completed.
+    #
+    # summary   - Hash with :total, :passed, :failed, :errored, :skipped
+    #             (Integers) and :focus (Boolean).
+    # worker_id - Integer manifest worker id.
+    #
+    # Returns nothing.
     def on_run_finish(summary:, worker_id:); end
 
-    # After all forked workers exit; only invoked from the parent in {Verity.run}.
-    # @param counts [Hash] String status keys from {Verity::Manifest#count_by_status}
-    # @param problem_rows [Array<Hash>] from {Verity::Manifest#failures_for_report}
+    # Public: Called from the parent process after all forked workers exit.
+    # Only invoked during parallel runs via Verity.run.
+    #
+    # counts       - Hash with String status keys and Integer counts from
+    #                Manifest#count_by_status.
+    # problem_rows - Array of Hashes from Manifest#failures_for_report.
+    #
+    # Returns nothing.
     def on_parallel_complete(counts:, problem_rows:); end
   end
 end

@@ -4,15 +4,38 @@ require "json"
 require "sqlite3"
 
 module Verity
+  # Public: SQLite-backed manifest that coordinates test distribution across
+  # workers. Each row tracks a single test's fingerprint, metadata, and
+  # execution status. Workers atomically claim pending rows to run.
   class Manifest
     SCHEMA_VERSION = 2
 
+    # Public: Immutable value object returned by claim_next representing a
+    # single test row from the manifest with all its stored metadata.
+    #
+    # fingerprint - String content-based test identifier.
+    # file        - String source file path.
+    # line        - Integer source line number.
+    # description - String human-readable test name.
+    # method      - String derived test method name.
+    # tags        - Array of tag Strings.
+    # requires    - Array of precondition Strings.
+    # resources   - Hash of resource metadata.
+    # timeout     - Float seconds or nil.
+    # status      - Symbol (:pending, :running, :passed, :failed, :errored).
+    # worker_id   - Integer or nil.
+    # failure     - Hash with "class", "message", "backtrace" keys, or nil.
     ClaimedRow = Data.define(
       :fingerprint, :file, :line, :description, :method,
       :tags, :requires, :resources, :timeout,
       :status, :worker_id, :failure
     )
 
+    # Public: Open (or create) a manifest database at the given path.
+    #
+    # path - String file path, or ":memory:" for an in-process database.
+    #
+    # Returns a new Manifest instance.
     def self.open(path, **)
       new(path, **)
     end
@@ -24,11 +47,18 @@ module Verity
       configure_connection!
     end
 
+    # Public: Close the underlying SQLite connection.
+    #
+    # Returns nothing.
     def close = @db.close
 
-    # Raw +SQLite3::Database+ (for tests and advanced introspection).
+    # Internal: Raw SQLite3::Database handle for tests and introspection.
     attr_reader :db
 
+    # Public: Create or upgrade the tests table to the current schema version.
+    # Safe to call multiple times; no-ops when already at SCHEMA_VERSION.
+    #
+    # Returns nothing.
     def migrate!
       version = @db.get_first_value("PRAGMA user_version").to_i
       return if version >= SCHEMA_VERSION
@@ -72,6 +102,12 @@ module Verity
       end
     end
 
+    # Public: Atomically clear the tests table and insert the given tests as
+    # pending rows. Called once per run before workers begin claiming.
+    #
+    # tests - Array of Verity::Test instances.
+    #
+    # Returns nothing.
     def replace_tests(tests)
       @db.transaction do
         @db.execute("DELETE FROM tests")
@@ -102,6 +138,12 @@ module Verity
       end
     end
 
+    # Public: Atomically claim the next pending test for a worker. Marks the
+    # row as "running" and returns its data.
+    #
+    # worker_id - Integer identifying the claiming worker.
+    #
+    # Returns a ClaimedRow, or nil when no pending tests remain.
     def claim_next(worker_id)
       rows = @db.execute2(<<~SQL, worker_id)
         UPDATE tests
@@ -125,6 +167,11 @@ module Verity
       hydrate_row(hash)
     end
 
+    # Public: Mark a test as passed.
+    #
+    # fingerprint - String test fingerprint.
+    #
+    # Returns nothing.
     def record_pass(fingerprint)
       @db.execute(<<~SQL, [fingerprint])
         UPDATE tests
@@ -133,6 +180,12 @@ module Verity
       SQL
     end
 
+    # Public: Mark a test as failed and store the failure details.
+    #
+    # fingerprint - String test fingerprint.
+    # error       - Exception that caused the failure.
+    #
+    # Returns nothing.
     def record_failure(fingerprint, error)
       @db.execute(<<~SQL, [encode_failure(error), fingerprint])
         UPDATE tests
@@ -141,6 +194,12 @@ module Verity
       SQL
     end
 
+    # Public: Mark a test as errored (unexpected exception) and store details.
+    #
+    # fingerprint - String test fingerprint.
+    # error       - Exception that caused the error.
+    #
+    # Returns nothing.
     def record_error(fingerprint, error)
       @db.execute(<<~SQL, [encode_failure(error), fingerprint])
         UPDATE tests
@@ -149,15 +208,26 @@ module Verity
       SQL
     end
 
+    # Public: Total number of test rows in the manifest.
+    #
+    # Returns an Integer.
     def example_count
       @db.get_first_value("SELECT COUNT(*) FROM tests").to_i
     end
 
-    # String status keys ("passed", "failed", …) for {Reporters::ParallelSummaryReporter}.
+    # Public: Aggregate test counts grouped by status. Used by
+    # ParallelSummaryReporter after all workers finish.
+    #
+    # Returns a Hash with String status keys and Integer counts.
     def count_by_status
       @db.execute("SELECT status, COUNT(*) FROM tests GROUP BY status").to_h.transform_values(&:to_i)
     end
 
+    # Public: Fetch details for all failed and errored tests, ordered by
+    # fingerprint, for the final summary report.
+    #
+    # Returns an Array of Hashes with :fingerprint, :description, :status,
+    # and :failure keys.
     def failures_for_report
       @db.execute(<<~SQL).map do |fingerprint, description, status, failure|
           SELECT fingerprint, description, status, failure

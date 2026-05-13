@@ -5,30 +5,66 @@ require "pathname"
 require "prism"
 
 module Verity
+  # Public: Content-addressed fingerprinting for test bodies. Parses source
+  # files with Prism to produce stable identifiers that survive line-number
+  # shifts when unrelated code changes, while disambiguating tests with
+  # identical bodies by appending the line number.
   module Fingerprint
     HEX_LENGTH = 16
 
     class << self
       THREAD_KEY = :__verity_fp_plan__
 
+      # Internal: Parse the given source file and install its line-to-fingerprint
+      # mapping on the current thread. Must be called before loading a test file.
+      #
+      # absolute_path - String absolute filesystem path to the source file.
+      #
+      # Returns the plan Hash (line => fingerprint).
       def install_plan!(absolute_path)
         Thread.current[THREAD_KEY] = plan_file(absolute_path)
       end
 
+      # Internal: Remove the current thread's fingerprint plan. Called after
+      # a test file finishes loading.
+      #
+      # Returns nil.
       def clear_plan!
         Thread.current[THREAD_KEY] = nil
       end
 
+      # Internal: Look up the fingerprint for a source line from the current
+      # thread's installed plan.
+      #
+      # line - Integer source line number.
+      #
+      # Returns a String fingerprint, or nil if no plan is active or the line
+      # has no entry.
       def lookup(line)
         Thread.current[THREAD_KEY]&.[](line)
       end
 
+      # Public: Generate a location-based fingerprint when the Prism plan
+      # does not cover a given line (e.g. dynamically generated tests).
+      #
+      # file - String file path.
+      # line - Integer line number.
+      #
+      # Returns a String in the form "relative/path:hex".
       def fallback_fingerprint(file, line)
         rel = relative_source_path(file)
         sha = Digest::SHA1.hexdigest("#{file}:#{line}")[0, HEX_LENGTH]
         "#{rel}:#{sha}"
       end
 
+      # Internal: Parse a source file and build a Hash mapping each `test`
+      # call's line number to a content-addressed fingerprint string.
+      # Duplicate body hashes within the same file are disambiguated by
+      # appending the line number.
+      #
+      # absolute_path - String absolute path to the Ruby source file.
+      #
+      # Returns a Hash { Integer => String }.
       def plan_file(absolute_path)
         source = File.read(absolute_path, encoding: "UTF-8")
         result = Prism.parse(source, filepath: File.expand_path(absolute_path))

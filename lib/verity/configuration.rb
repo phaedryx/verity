@@ -3,14 +3,28 @@
 require "etc"
 
 module Verity
+  # Public: Holds all user-configurable settings for a Verity test run.
+  # Access via `Verity.configuration` or inside a `Verity.configure` block.
+  #
+  # Examples
+  #
+  #   Verity.configure do |c|
+  #     c.test_globs    = ["test/**/*_test.rb"]
+  #     c.worker_count  = :cpus
+  #     c.reporter      = Verity::Reporters::DotsReporter.new($stdout)
+  #   end
   class Configuration
-    # @!attribute [rw] reporter
-    #   Receives {Verity::Reporter} lifecycle callbacks from {Runner} and the parent process after parallel runs.
-    #   Default: {Verity::Reporters::ColoredDotsReporter} writing to `$stdout` (colors when TTY; see {Verity::Reporters::ColoredDotsReporter}).
-    #   Set your own object — typically `include Verity::Reporter` and override selected hooks.
+    # Public: String path for the SQLite manifest database. Use ":memory:" for
+    # an in-process database (single-worker only). Default: ":memory:".
     #
-    # @!attribute [rw] worker_count
-    #   Fixed pool as Integer (or decimal string), or +:cpus+ / +:cpu+ / +"cpus"+ to use one worker per {::Etc.nprocessors} (minimum +1+).
+    # Public: Array of glob Strings matched against the working directory to
+    # discover test files. Default: ["verity/**/*_test.rb"].
+    #
+    # Public: Integer worker count, or :cpus / "cpus" to auto-detect from
+    # Etc.nprocessors. Default: 1.
+    #
+    # Public: Object implementing the Verity::Reporter interface that receives
+    # lifecycle callbacks. Default: ColoredDotsReporter writing to $stdout.
     attr_accessor :manifest_path, :test_globs, :worker_count, :reporter
 
     def initialize
@@ -24,7 +38,11 @@ module Verity
       @reporter = Verity::Reporters::ColoredDotsReporter.new($stdout)
     end
 
-    # Integer worker count used by {Verity.run} (resolves +:cpus+ and compatible string forms).
+    # Public: Resolve worker_count to an Integer, expanding :cpus to the
+    # number of available processors.
+    #
+    # Returns a positive Integer.
+    # Raises ArgumentError if the value cannot be resolved or is less than 1.
     def resolved_worker_count
       n =
         if self.class.cpus_worker_token?(worker_count)
@@ -42,15 +60,27 @@ module Verity
       n
     end
 
+    # Public: Check whether the manifest is configured as in-memory.
+    #
+    # Returns true when manifest_path is ":memory:".
     def memory_manifest?
       manifest_path == ":memory:"
     end
 
+    # Public: Expand test_globs into a sorted, deduplicated list of file paths.
+    #
+    # Returns a sorted Array of String file paths.
     def test_files
       test_globs.flat_map { |pattern| Dir.glob(pattern) }.uniq.sort
     end
 
     class << self
+      # Internal: Determine whether a value represents the :cpus worker token.
+      # Accepts :cpus, :cpu, "cpus", or "cpu" (case-insensitive).
+      #
+      # value - Symbol or String to check.
+      #
+      # Returns true if the value is a cpus token.
       def cpus_worker_token?(value)
         case value
         when :cpus, :cpu

@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ruby: ["3.2", "3.3", "3.4"]
+        ruby: ["3.3", "3.4"]
 
     steps:
       - uses: actions/checkout@v4
@@ -29,7 +29,33 @@ jobs:
       - name: Minitest (test/)
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          for f in test/*_test.rb; do
+          shopt -s nullglob globstar
+          for f in test/**/*_test.rb; do
             bundle exec ruby -Ilib:test "$f"
           done
+
+      - name: RSpec (spec/)
+        run: bundle exec rspec --format documentation
+
+      - name: Parallel workers smoke test
+        run: |
+          bundle exec ruby -Ilib -e '
+            require "verity"
+            require "tmpdir"
+            Dir.mktmpdir do |dir|
+              db = File.join(dir, "ci.db")
+              Dir.chdir(File.expand_path(".", ENV["GITHUB_WORKSPACE"] || ".")) do
+                Verity.reset_configuration!
+                Verity.configure do |c|
+                  c.manifest_path = db
+                  c.worker_count = 2
+                  c.reporter = Verity::Reporters::NullReporter.new
+                end
+                exit(Verity.run ? 0 : 1)
+              end
+            end
+          '
+
+      - name: Lint (RuboCop)
+        run: bundle exec rubocop --parallel
+        continue-on-error: true

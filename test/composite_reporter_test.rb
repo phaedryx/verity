@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# Triple suite (compare / redundant proof): verity/composite_reporter_test.rb · spec/verity/composite_reporter_spec.rb
+
 require "minitest/autorun"
 require_relative "../lib/verity"
 require_relative "verity_test_helper"
@@ -32,7 +34,7 @@ class CompositeReporterTest < Minitest::Test
     composite.on_test_complete(result: result, worker_id: 1)
 
     [r1, r2].each do |r|
-      assert_equal [{ status: :pass, worker_id: 1 }], r.test_completes
+      assert_equal [{ status: :pass, error: nil, worker_id: 1 }], r.test_completes
     end
   end
 
@@ -84,7 +86,7 @@ class CompositeReporterTest < Minitest::Test
       line: 1,
       fn: -> {},
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
   end
 end

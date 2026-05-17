@@ -24,9 +24,13 @@ module Verity
         errored = counts.fetch("errored", 0)
         pending = counts.fetch("pending", 0)
         running = counts.fetch("running", 0)
+        skipped = counts.fetch("skipped", 0)
         total = passed + failed + errored + pending + running
 
-        @io.puts "\nParallel run finished (#{total} tests in manifest: #{passed} passed, #{failed} failed, #{errored} errored, #{pending} pending, #{running} running)"
+        line = "Parallel run finished (#{total} tests in manifest: #{passed} passed, #{failed} failed, #{errored} errored, #{pending} pending, #{running} running"
+        line += ", #{skipped} skipped" if skipped > 0
+        line += ")"
+        @io.puts "\n#{line}"
 
         return if problem_rows.empty?
 

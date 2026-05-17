@@ -7,6 +7,9 @@ module Verity
   # so the runner can differentiate assertion failures from errors.
   class AssertionError < StandardError; end
 
+  # Public: Raised when a test body runs longer than its `timeout:` (see DSL).
+  class TestTimeoutError < StandardError; end
+
   # Public: Assertion methods mixed into the DSL. Every assertion has a
   # corresponding `refute_*` negation. All accept an optional `message:`
   # keyword that overrides the default failure text.
@@ -31,6 +34,28 @@ module Verity
     def refute(check, message: nil)
       return unless check
       fail_assertion(message) { "Expected falsy but got #{check.inspect}" }
+    end
+
+    # Public: Assert that a value is nil.
+    #
+    # actual  - The value to test.
+    # message - Optional String or Proc failure message.
+    #
+    # Raises AssertionError when actual is not nil.
+    def assert_nil(actual, message: nil)
+      return if actual.nil?
+      fail_assertion(message) { "Expected nil but got #{actual.inspect}" }
+    end
+
+    # Public: Assert that a value is not nil.
+    #
+    # actual  - The value to test.
+    # message - Optional String or Proc failure message.
+    #
+    # Raises AssertionError when actual is nil.
+    def refute_nil(actual, message: nil)
+      return unless actual.nil?
+      fail_assertion(message) { "Expected non-nil but got nil" }
     end
 
     # Public: Assert that two values are equal using `==`.

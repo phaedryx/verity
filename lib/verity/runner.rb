@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "timeout"
+
 module Verity
   # Public: Executes tests, fires reporter hooks, and records results back to
   # the manifest. A single Runner instance services one worker process.
@@ -141,7 +143,8 @@ module Verity
         line: claimed.line,
         fn: -> {},
         group_path: [],
-        inherited_group_tags: []
+        inherited_group_tags: [],
+        group_scopes: []
       )
     end
 
@@ -159,12 +162,26 @@ module Verity
     end
 
     def execute(test)
-      test.fn.call
+      body = proc { test.fn.call }
+      if (sec = timeout_seconds_for(test))
+        Timeout.timeout(sec, TestTimeoutError, &body)
+      else
+        body.call
+      end
       Result.new(test:, status: :pass, error: nil)
     rescue AssertionError => e
       Result.new(test:, status: :fail, error: e)
+    rescue TestTimeoutError => e
+      Result.new(test:, status: :error, error: e)
     rescue => e
       Result.new(test:, status: :error, error: e)
+    end
+
+    def timeout_seconds_for(test)
+      Verity.validate_test_timeout!(test.timeout)
+      return nil if test.timeout.nil?
+
+      test.timeout.to_f
     end
   end
 end

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# Triple suite (compare / redundant proof): verity/group_test.rb · spec/verity/group_spec.rb
+
 require "minitest/autorun"
 require "stringio"
 require "fileutils"
@@ -12,6 +14,21 @@ class GroupTest < Minitest::Test
   def test_group_requires_block
     reset_verity_process_state!
     assert_raises(ArgumentError) { Object.new.extend(Verity::DSL).group("nope") }
+  end
+
+  def test_inner_group_without_block_does_not_corrupt_outer_group_stack
+    reset_verity_process_state!
+    Verity.clear_group_stack!
+
+    dsl = Object.new.extend(Verity::DSL)
+    dsl.group("Outer") do
+      assert_raises(ArgumentError) { dsl.group("Bad") }
+      dsl.test("after_bad_inner") { true }
+    end
+
+    t = Verity::Registry.all.find { _1.description == "after_bad_inner" }
+    assert_equal ["Outer"], t.group_path
+    assert_equal ["Outer"], t.group_scopes.map(&:title)
   end
 
   def test_nested_group_path_on_tests
@@ -30,6 +47,10 @@ class GroupTest < Minitest::Test
 
     t = Verity::Registry.all.first
     assert_equal %w[Outer Inner], t.group_path
+    assert_equal 2, t.group_scopes.size
+    assert_equal %w[Outer Inner], t.group_scopes.map(&:title)
+    assert(t.group_scopes.all? { |g| g.file.end_with?("group_test.rb") })
+    assert_operator t.group_scopes.map(&:line).max, :>=, 1
     assert_equal %i[integration], t.inherited_group_tags
     assert_equal %i[integration], Verity.effective_tags(t)
   end
@@ -102,7 +123,7 @@ class GroupTest < Minitest::Test
       line: 1,
       fn: -> {},
       group_path: %w[Alpha],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
     b = Verity::Test.new(
       fingerprint: "b.rb:#{'b' * 16}",
@@ -115,7 +136,7 @@ class GroupTest < Minitest::Test
       line: 1,
       fn: -> {},
       group_path: %w[Alpha Beta],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
     c = Verity::Test.new(
       fingerprint: "c.rb:#{'c' * 16}",
@@ -128,7 +149,7 @@ class GroupTest < Minitest::Test
       line: 1,
       fn: -> {},
       group_path: ["Gamma"],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
 
     rep.on_run_start(total: 3, worker_id: 0)
@@ -167,6 +188,85 @@ class GroupTest < Minitest::Test
       paths = Verity::Registry.all.map(&:group_path)
       assert_includes paths, %w[FromA]
       assert_includes paths, []
+    end
+  end
+
+  def test_location_filter_matches_group_opening_line
+    reset_verity_process_state!
+    Dir.mktmpdir do |dir|
+      f = File.join(dir, "scoped_test.rb")
+      File.write(f, <<~RUBY)
+        group "Box" do
+          test "inside_one" do
+          end
+          test "inside_two" do
+          end
+        end
+
+        test "outside" do
+        end
+      RUBY
+
+      group_line = File.readlines(f).index { _1.include?('group "Box"') } + 1
+
+      Dir.chdir(dir) do
+        Verity.configure do |c|
+          c.test_globs = [f]
+          c.location_filters = [[File.expand_path(f), group_line]]
+        end
+        Verity.load_discovery!
+        names = Verity.runnable_tests.map(&:description).sort
+        assert_equal %w[inside_one inside_two], names
+      end
+    end
+  end
+
+  def test_location_filter_matches_test_line_only
+    reset_verity_process_state!
+    Dir.mktmpdir do |dir|
+      f = File.join(dir, "one_test.rb")
+      File.write(f, <<~RUBY)
+        group "Box" do
+          test "only_me" do
+          end
+          test "other" do
+          end
+        end
+      RUBY
+
+      lines = File.readlines(f)
+      only_line = lines.index { _1.include?('test "only_me"') } + 1
+
+      Dir.chdir(dir) do
+        Verity.configure do |c|
+          c.test_globs = [f]
+          c.location_filters = [[File.expand_path(f), only_line]]
+        end
+        Verity.load_discovery!
+        names = Verity.runnable_tests.map(&:description)
+        assert_equal ["only_me"], names
+      end
+    end
+  end
+
+  def test_location_filter_warns_when_nothing_matches
+    reset_verity_process_state!
+    Dir.mktmpdir do |dir|
+      f = File.join(dir, "emptyish_test.rb")
+      File.write(f, <<~RUBY)
+        test "solo" do
+        end
+      RUBY
+
+      Dir.chdir(dir) do
+        Verity.configure do |c|
+          c.test_globs = [f]
+          c.location_filters = [[File.expand_path(f), 999]]
+        end
+        Verity.load_discovery!
+        _err = capture_io { assert_empty Verity.runnable_tests }.last
+        assert_match(/no tests matched location filter/, _err)
+      end
     end
   end
 end

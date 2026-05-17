@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# Triple suite (compare / redundant proof): verity/dots_reporter_test.rb · spec/verity/dots_reporter_spec.rb
+
 require "minitest/autorun"
 require "stringio"
 require_relative "../lib/verity"
@@ -26,11 +28,11 @@ class DotsReporterTest < Minitest::Test
     assert_equal "E", io.string
   end
 
-  def test_on_test_complete_skip_does_not_crash
+  def test_on_test_complete_prints_s_for_skip
     io = StringIO.new
     rep = Verity::Reporters::DotsReporter.new(io)
     rep.on_test_complete(result: make_result(status: :skip), worker_id: 0)
-    assert_equal "", io.string
+    assert_equal "S", io.string
   end
 
   def test_on_run_finish_prints_summary
@@ -71,7 +73,7 @@ class DotsReporterTest < Minitest::Test
       line: 1,
       fn: -> {},
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
     Verity::Runner::Result.new(test: t, status: status, error: error)
   end

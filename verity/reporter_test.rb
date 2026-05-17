@@ -20,14 +20,14 @@ test "runner invokes reporter hooks in order for explicit list" do
     line: 1,
     fn: -> {},
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   Verity::Registry.register(t1)
 
   Verity::Runner.new(reporter: reporter).run([t1])
 
   assert_equal actual: reporter.run_starts, expected: [{ total: 1, worker_id: 0 }]
-  assert_equal actual: reporter.test_completes, expected: [{ status: :pass, worker_id: 0 }]
+  assert_equal actual: reporter.test_completes, expected: [{ status: :pass, error: nil, worker_id: 0 }]
   assert_equal actual: reporter.run_finishes.size, expected: 1
   summary = reporter.run_finishes.first[:summary]
   assert_equal actual: reporter.run_finishes.first[:worker_id], expected: 0
@@ -69,6 +69,7 @@ test "documentation summary shows skipped line in subprocess" do
           c.test_globs = ["verity/**/*_test.rb"]
           c.manifest_path = ":memory:"
           c.reporter = rep
+          c.worker_count = 1
         end
         Verity.run or exit(1)
       end
@@ -108,6 +109,7 @@ test "configure reporter used by isolated Verity.run" do
           c.test_globs = ["verity/**/*_test.rb"]
           c.manifest_path = ":memory:"
           c.reporter = rep
+          c.worker_count = 1
         end
         result = Verity.run
         unless events == [[:start, 1, 0], [:ex, :pass, 0], [:finish, 1, 0]]
@@ -135,7 +137,7 @@ test "run_manifest updates manifest counts and failures_for_report" do
     line: 1,
     fn: -> {},
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   bad = Verity::Test.new(
     fingerprint: "repox:#{"f" * 16}",
@@ -148,7 +150,7 @@ test "run_manifest updates manifest counts and failures_for_report" do
     line: 1,
     fn: -> { raise Verity::AssertionError, "no" },
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   manifest.replace_tests([good, bad])
   Verity::Registry.register(good)

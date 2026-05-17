@@ -8,16 +8,28 @@ RSpec.describe Verity::Configuration do
   subject(:config) { Verity::Configuration.new }
 
   describe "defaults" do
-    it "sets manifest_path to :memory:" do
-      expect(config.manifest_path).to eq(":memory:")
+    it "sets manifest_path to verity/manifest.db" do
+      expect(config.manifest_path).to eq("verity/manifest.db")
     end
 
     it "sets test_globs to verity/**/*_test.rb" do
       expect(config.test_globs).to eq(["verity/**/*_test.rb"])
     end
 
-    it "sets worker_count to 1" do
-      expect(config.worker_count).to eq(1)
+    it "sets worker_count to :cpus" do
+      expect(config.worker_count).to eq(:cpus)
+    end
+
+    it "sets test_order to :random" do
+      expect(config.test_order).to eq(:random)
+    end
+
+    it "sets shuffle_seed to nil" do
+      expect(config.shuffle_seed).to be_nil
+    end
+
+    it "sets location_filters to []" do
+      expect(config.location_filters).to eq([])
     end
 
     it "defaults reporter to ColoredDotsReporter" do

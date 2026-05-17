@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# Triple suite (compare / redundant proof): verity/reporter_test.rb · spec/verity/reporter_spec.rb
+
 require "minitest/autorun"
 require "stringio"
 require "fileutils"
@@ -26,7 +28,7 @@ class ReporterTest < Minitest::Test
       line: 1,
       fn: -> {},
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
     Verity::Registry.register(t1)
 
@@ -34,7 +36,7 @@ class ReporterTest < Minitest::Test
 
     # Assert
     assert_equal [{ total: 1, worker_id: 0 }], reporter.run_starts
-    assert_equal [{ status: :pass, worker_id: 0 }], reporter.test_completes
+    assert_equal [{ status: :pass, error: nil, worker_id: 0 }], reporter.test_completes
     assert_equal 1, reporter.run_finishes.size
     summary = reporter.run_finishes.first[:summary]
     assert_equal 0, reporter.run_finishes.first[:worker_id]
@@ -63,7 +65,7 @@ class ReporterTest < Minitest::Test
       line: 1,
       fn: -> { raise "unreachable" },
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
     focus_test = Verity::Test.new(
       fingerprint: "f.rb:#{'c' * 16}",
@@ -76,7 +78,7 @@ class ReporterTest < Minitest::Test
       line: 1,
       fn: -> {},
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
     other = Verity::Test.new(
       fingerprint: "o.rb:#{'d' * 16}",
@@ -89,7 +91,7 @@ class ReporterTest < Minitest::Test
       line: 1,
       fn: -> {},
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
     Verity::Registry.register(skip_test)
     Verity::Registry.register(focus_test)
@@ -127,6 +129,7 @@ class ReporterTest < Minitest::Test
           c.test_globs = ["verity/**/*_test.rb"]
           c.manifest_path = ":memory:"
           c.reporter = rep
+          c.worker_count = 1
         end
 
         # Act
@@ -155,7 +158,7 @@ class ReporterTest < Minitest::Test
       line: 1,
       fn: -> {},
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
     bad = Verity::Test.new(
       fingerprint: "x.rb:#{'f' * 16}",
@@ -168,7 +171,7 @@ class ReporterTest < Minitest::Test
       line: 1,
       fn: -> { raise Verity::AssertionError, "no" },
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
     manifest.replace_tests([good, bad])
     Verity::Registry.register(good)

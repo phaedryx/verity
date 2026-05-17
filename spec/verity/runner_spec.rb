@@ -2,6 +2,9 @@
 
 require "spec_helper"
 
+# Runner coverage complements verity/runner_manifest_test.rb. There is intentionally
+# no standalone verity/runner_test.rb to avoid wiping the Registry during aggregated dogfood CI.
+
 RSpec.describe Verity::Runner do
   def make_test(description, tags: [], fn: -> {})
     Verity::Test.new(
@@ -15,7 +18,7 @@ RSpec.describe Verity::Runner do
       line: __LINE__,
       fn: fn,
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
   end
 
@@ -82,6 +85,80 @@ RSpec.describe Verity::Runner do
       expect(reporter.test_completes.first[:status]).to eq(:error)
     end
 
+    it "returns true when a test finishes within timeout" do
+      reporter = Verity::Reporters::TestReporter.new
+      runner = Verity::Runner.new(reporter: reporter)
+
+      t = Verity::Test.new(
+        fingerprint: "fp_timeout_ok:abcdef0123456789",
+        description: "within_timeout",
+        tags: [],
+        timeout: 2.0,
+        requires: [],
+        resources: {},
+        file: __FILE__,
+        line: __LINE__,
+        fn: -> { :done },
+        group_path: [],
+        inherited_group_tags: [], group_scopes: []
+      )
+      register(t)
+
+      expect(runner.run([t])).to be true
+      expect(reporter.test_completes.first[:status]).to eq(:pass)
+    end
+
+    it "returns false and errors when the test body exceeds timeout" do
+      reporter = Verity::Reporters::TestReporter.new
+      runner = Verity::Runner.new(reporter: reporter)
+
+      t = Verity::Test.new(
+        fingerprint: "fp_timeout_blow:abcdef0123456789",
+        description: "slow",
+        tags: [],
+        timeout: 0.05,
+        requires: [],
+        resources: {},
+        file: __FILE__,
+        line: __LINE__,
+        fn: -> { sleep 0.5 },
+        group_path: [],
+        inherited_group_tags: [], group_scopes: []
+      )
+      register(t)
+
+      expect(runner.run([t])).to be false
+      complete = reporter.test_completes.first
+      expect(complete[:status]).to eq(:error)
+      expect(complete[:error]).to be_a(Verity::TestTimeoutError)
+    end
+
+    it "errors when timeout is set but invalid on a constructed Test" do
+      reporter = Verity::Reporters::TestReporter.new
+      runner = Verity::Runner.new(reporter: reporter)
+
+      t = Verity::Test.new(
+        fingerprint: "fp_bad_timeout:abcdef0123456789",
+        description: "bad_timeout",
+        tags: [],
+        timeout: 0,
+        requires: [],
+        resources: {},
+        file: __FILE__,
+        line: __LINE__,
+        fn: -> { true },
+        group_path: [],
+        inherited_group_tags: [], group_scopes: []
+      )
+      register(t)
+
+      expect(runner.run([t])).to be false
+      complete = reporter.test_completes.first
+      expect(complete[:status]).to eq(:error)
+      expect(complete[:error]).to be_a(ArgumentError)
+      expect(complete[:error].message).to match(/test timeout must be positive/)
+    end
+
     it "reports skipped tests" do
       reporter = Verity::Reporters::TestReporter.new
       runner = Verity::Runner.new(reporter: reporter)
@@ -132,6 +209,36 @@ RSpec.describe Verity::Runner do
       expect(result).to be false
       counts = manifest.count_by_status
       expect(counts["failed"]).to eq(1)
+      manifest.close
+    end
+
+    it "records timeouts as errored in the manifest" do
+      reporter = Verity::Reporters::TestReporter.new
+      runner = Verity::Runner.new(reporter: reporter)
+
+      slow = Verity::Test.new(
+        fingerprint: "fp_manifest_timeout:abcdef0123456789",
+        description: "manifest_timeout",
+        tags: [],
+        timeout: 0.05,
+        requires: [],
+        resources: {},
+        file: __FILE__,
+        line: __LINE__,
+        fn: -> { sleep 0.5 },
+        group_path: [],
+        inherited_group_tags: [], group_scopes: []
+      )
+      register(slow)
+
+      manifest = Verity::Manifest.open(":memory:")
+      manifest.migrate!
+      manifest.replace_tests([slow])
+
+      result = runner.run_manifest(manifest, worker_id: 0)
+
+      expect(result).to be false
+      expect(manifest.count_by_status["errored"]).to eq(1)
       manifest.close
     end
   end

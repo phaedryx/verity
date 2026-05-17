@@ -17,7 +17,7 @@ test "focus_tag? is true when focus in tags" do
     line: 1,
     fn: -> {},
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   assert Verity.focus_tag?(t)
 end
@@ -38,7 +38,7 @@ test "skip wins over focus on same test" do
     line: 1,
     fn: -> {},
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   assert Verity.skipped?(t)
 end
@@ -65,6 +65,7 @@ test "verity run honors focus in isolated project" do
         Verity.configure do |c|
           c.test_globs = ["verity/**/*_test.rb"]
           c.manifest_path = ":memory:"
+          c.worker_count = 1
         end
         ok = Verity.run
         reg = Verity::Registry.all.size

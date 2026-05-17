@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# Triple suite (compare / redundant proof): verity/skip_tag_test.rb · spec/verity/skip_tag_spec.rb
+
 require "minitest/autorun"
 require "fileutils"
 require_relative "../lib/verity"
@@ -21,7 +23,7 @@ class SkipTagTest < Minitest::Test
       line: 1,
       fn: -> {},
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
     t_skip = Verity::Test.new(
       fingerprint: "b.rb:bbbbbbbbbbbbbbbb",
@@ -34,7 +36,7 @@ class SkipTagTest < Minitest::Test
       line: 1,
       fn: -> {},
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
     Verity::Registry.register(t_run)
     Verity::Registry.register(t_skip)
@@ -58,7 +60,7 @@ class SkipTagTest < Minitest::Test
       line: 1,
       fn: -> { ran << :ok },
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
     t_skip = Verity::Test.new(
       fingerprint: "b.rb:bbbbbbbbbbbbbbbb",
@@ -71,7 +73,7 @@ class SkipTagTest < Minitest::Test
       line: 2,
       fn: -> { ran << :skip },
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
     Verity::Registry.register(t_ok)
     Verity::Registry.register(t_skip)
@@ -79,7 +81,7 @@ class SkipTagTest < Minitest::Test
     rep = Verity::Reporters::TestReporter.new
     assert Verity::Runner.new(reporter: rep).run([t_ok, t_skip])
     assert_equal [{ total: 1, worker_id: 0 }], rep.run_starts
-    assert_equal [{ status: :pass, worker_id: 0 }, { status: :skip, worker_id: 0 }], rep.test_completes
+    assert_equal [{ status: :pass, error: nil, worker_id: 0 }, { status: :skip, error: nil, worker_id: 0 }], rep.test_completes
     assert_equal 1, rep.run_finishes.size
     fin = rep.run_finishes.first
     assert_equal 0, fin[:worker_id]
@@ -112,6 +114,7 @@ class SkipTagTest < Minitest::Test
         Verity.configure do |c|
           c.test_globs = ["verity/**/*_test.rb"]
           c.manifest_path = ":memory:"
+          c.worker_count = 1
         end
 
         assert Verity.run

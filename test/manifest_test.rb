@@ -1,12 +1,28 @@
 # frozen_string_literal: true
 
+# Triple suite (compare / redundant proof): verity/manifest_test.rb · spec/verity/manifest_spec.rb
+
 require "minitest/autorun"
 require "json"
 require "sqlite3"
+require "tmpdir"
 require_relative "../lib/verity"
 
 class ManifestTest < Minitest::Test
   ClaimedRow = Verity::Manifest::ClaimedRow
+
+  def test_open_creates_parent_directories_for_non_memory_path
+    Dir.mktmpdir do |base|
+      nested = File.join(base, "deep", "nested", "dir")
+      path = File.join(nested, "test.db")
+      refute Dir.exist?(nested)
+      m = Verity::Manifest.open(path)
+      m.migrate!
+      assert File.exist?(path)
+    ensure
+      m&.close
+    end
+  end
 
   def test_migrate_is_idempotent
     # Arrange
@@ -48,8 +64,8 @@ class ManifestTest < Minitest::Test
     end
   end
 
-  def test_claim_next_orders_by_fingerprint
-    # Arrange
+  def test_claim_next_orders_by_dispatch_sequence
+    # Arrange — claim order follows replace_tests arg order (queue_index), not fingerprint.
     manifest = open_memory_manifest
     triple = [
       make_test(fingerprint: "z.rb:1111111111111111", file: "z.rb", line: 1),
@@ -65,9 +81,9 @@ class ManifestTest < Minitest::Test
       third_claim = manifest.claim_next(3)
 
       # Assert
-      assert_equal "a.rb:2222222222222222", first_claim.fingerprint
-      assert_equal "m.rb:3333333333333333", second_claim.fingerprint
-      assert_equal "z.rb:1111111111111111", third_claim.fingerprint
+      assert_equal "z.rb:1111111111111111", first_claim.fingerprint
+      assert_equal "a.rb:2222222222222222", second_claim.fingerprint
+      assert_equal "m.rb:3333333333333333", third_claim.fingerprint
       assert_kind_of ClaimedRow, first_claim
     ensure
       manifest.close
@@ -243,6 +259,46 @@ class ManifestTest < Minitest::Test
         sqlite = sqlite_connection(manifest)
         names = sqlite.execute("PRAGMA table_info(tests)").map { |r| r[1] }
         refute_includes names, "duration_p50"
+        assert_includes names, "queue_index"
+        assert_equal Verity::Manifest::SCHEMA_VERSION, sqlite.get_first_value("PRAGMA user_version").to_i
+      ensure
+        manifest.close
+      end
+    end
+  end
+
+  def test_migrate_v2_to_v3_adds_queue_index
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "v2.db")
+      SQLite3::Database.new(path) do |db|
+        db.execute_batch(<<~SQL)
+          CREATE TABLE tests (
+            fingerprint     TEXT PRIMARY KEY,
+            file            TEXT NOT NULL,
+            line            INTEGER NOT NULL,
+            description     TEXT,
+            method          TEXT NOT NULL,
+            tags            TEXT,
+            requires        TEXT,
+            resources       TEXT,
+            timeout         REAL,
+            status          TEXT NOT NULL DEFAULT 'pending',
+            worker_id       INTEGER,
+            failure         TEXT,
+            CHECK (status IN ('pending', 'running', 'passed', 'failed', 'errored'))
+          );
+          CREATE INDEX idx_tests_pending
+            ON tests (status, fingerprint);
+        SQL
+        db.execute("PRAGMA user_version = 2")
+      end
+
+      manifest = Verity::Manifest.open(path)
+      begin
+        manifest.migrate!
+        sqlite = sqlite_connection(manifest)
+        names = sqlite.execute("PRAGMA table_info(tests)").map { |r| r[1] }
+        assert_includes names, "queue_index"
         assert_equal Verity::Manifest::SCHEMA_VERSION, sqlite.get_first_value("PRAGMA user_version").to_i
       ensure
         manifest.close
@@ -272,7 +328,7 @@ class ManifestTest < Minitest::Test
       line: 10,
       fn: -> {},
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     }
     Verity::Test.new(**defaults.merge(overrides))
   end

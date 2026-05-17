@@ -15,7 +15,9 @@ module Verity
   #   end
   class Configuration
     # Public: String path for the SQLite manifest database. Use ":memory:" for
-    # an in-process database (single-worker only). Default: ":memory:".
+    # an in-process database (single-worker only; cannot be used with parallel
+    # workers). Default: "verity/manifest.db" (relative to the process working
+    # directory, typically the project root).
     #
     # Public: Array of glob Strings matched against the working directory to
     # discover test files. Default: ["verity/**/*_test.rb"].
@@ -25,17 +27,33 @@ module Verity
     #
     # Public: Object implementing the Verity::Reporter interface that receives
     # lifecycle callbacks. Default: ColoredDotsReporter writing to $stdout.
-    attr_accessor :manifest_path, :test_globs, :worker_count, :reporter
+    #
+    # Public: Test dispatch order for manifest runs: :random (default; shuffled
+    # once in the coordinator) or :fingerprint (sorted). A non-nil #shuffle_seed
+    # always implies a shuffle, even if test_order is :fingerprint.
+    #
+    # Public: Integer RNG seed for shuffled order. When nil and order is random,
+    # a seed is chosen, stored here, and printed to stderr (the number only)
+    # before workers start.
+    #
+    # Public: Optional Array of [absolute_path, Integer line] pairs (from CLI
+    # file:line). When non-empty, only tests whose #line matches, or that have
+    # an enclosing #group opened on that file:line, are runnable.
+    attr_accessor :manifest_path, :test_globs, :worker_count, :reporter,
+                  :test_order, :shuffle_seed, :location_filters
 
     def initialize
       set_defaults!
     end
 
     def set_defaults!
-      @manifest_path = ":memory:"
+      @manifest_path = "verity/manifest.db"
       @test_globs = ["verity/**/*_test.rb"]
-      @worker_count = 1
+      @worker_count = :cpus
       @reporter = Verity::Reporters::ColoredDotsReporter.new($stdout)
+      @test_order = :random
+      @shuffle_seed = nil
+      @location_filters = []
     end
 
     # Public: Resolve worker_count to an Integer, expanding :cpus to the

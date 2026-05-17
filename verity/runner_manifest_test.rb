@@ -14,7 +14,7 @@ MPASS = lambda do |fingerprint: "ok.rb:aaaaaaaaaaaaaaaa", description: "passes"|
     line: 1,
     fn: -> {},
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
 end
 
@@ -30,7 +30,7 @@ MFAIL = lambda do |fingerprint: "bad.rb:bbbbbbbbbbbbbbbb"|
     line: 1,
     fn: -> { raise Verity::AssertionError, "fails" },
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
 end
 
@@ -80,7 +80,7 @@ test "run_manifest records failure and error statuses" do
     line: 1,
     fn: -> { raise "boom" },
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   Verity::Registry.register(good)
   Verity::Registry.register(bad)
@@ -133,7 +133,7 @@ test "missing registry row subprocess records errored" do
       line: 1,
       fn: -> {},
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
     manifest.replace_tests([orphan_row])
     Verity::Registry.clear
@@ -146,4 +146,31 @@ test "missing registry row subprocess records errored" do
   RUBY
 
   assert system(RbConfig.ruby, "-I#{lib}", "-e", script, out: File::NULL, err: File::NULL)
+end
+
+test "run_manifest records timeout as errored" do
+  manifest = Verity::Manifest.open(":memory:").tap(&:migrate!)
+  runner = Verity::Runner.new(reporter: Verity::Reporters::NullReporter.new)
+  slow = Verity::Test.new(
+    fingerprint: "timeoutm.rb:eeeeeeeeeeeeeeee",
+    description: "manifest_timeout",
+    tags: [],
+    timeout: 0.05,
+    requires: [],
+    resources: {},
+    file: "slow.rb",
+    line: 1,
+    fn: -> { sleep 0.5 },
+    group_path: [],
+    inherited_group_tags: [], group_scopes: []
+  )
+  Verity::Registry.register(slow)
+  manifest.replace_tests([slow])
+  begin
+    refute runner.run_manifest(manifest, worker_id: 0)
+    assert_equal actual: manifest.count_by_status["errored"], expected: 1
+  ensure
+    manifest.close
+    Verity.hooks.each_value(&:clear)
+  end
 end

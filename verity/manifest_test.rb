@@ -21,9 +21,24 @@ MMAKE = lambda do |**overrides|
     line: 10,
     fn: -> {},
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   }
   Verity::Test.new(**defaults.merge(overrides))
+end
+
+test "manifest open creates parent directories for non-memory path" do
+  dir = Dir.mktmpdir
+  nested = File.join(dir, "deep", "nested", "dir")
+  path = File.join(nested, "test.db")
+  refute(Dir.exist?(nested))
+  m = Verity::Manifest.open(path)
+  begin
+    m.migrate!
+    assert(File.exist?(path))
+  ensure
+    m.close
+    FileUtils.rm_rf(dir)
+  end
 end
 
 test "manifest migrate yields schema version" do
@@ -54,7 +69,7 @@ test "manifest replace_tests inserts rows" do
   end
 end
 
-test "manifest claim_next orders by fingerprint" do
+test "manifest claim_next orders by dispatch sequence" do
   manifest = Verity::Manifest.open(":memory:").tap(&:migrate!)
   triple = [
     MMAKE.call(fingerprint: "z.rb:1111111111111111", file: "z.rb", line: 1),
@@ -66,9 +81,9 @@ test "manifest claim_next orders by fingerprint" do
     first_claim = manifest.claim_next(1)
     second_claim = manifest.claim_next(2)
     third_claim = manifest.claim_next(3)
-    assert_equal actual: first_claim.fingerprint, expected: "a.rb:2222222222222222"
-    assert_equal actual: second_claim.fingerprint, expected: "m.rb:3333333333333333"
-    assert_equal actual: third_claim.fingerprint, expected: "z.rb:1111111111111111"
+    assert_equal actual: first_claim.fingerprint, expected: "z.rb:1111111111111111"
+    assert_equal actual: second_claim.fingerprint, expected: "a.rb:2222222222222222"
+    assert_equal actual: third_claim.fingerprint, expected: "m.rb:3333333333333333"
     assert first_claim.is_a?(MClaimedRow)
   ensure
     manifest.close
@@ -210,6 +225,7 @@ test "manifest migrate v1 drops duration_p50 column" do
       sqlite = manifest.db
       names = sqlite.execute("PRAGMA table_info(tests)").map { |r| r[1] }
       refute_includes item: "duration_p50", collection: names
+      assert_includes item: "queue_index", collection: names
       assert_equal actual: sqlite.get_first_value("PRAGMA user_version").to_i, expected: Verity::Manifest::SCHEMA_VERSION
     ensure
       manifest.close

@@ -18,7 +18,7 @@ test "colored dots plain when color false" do
     line: 1,
     fn: -> {},
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   r = Verity::Runner::Result.new(test: t, status: :pass, error: nil)
   rep.on_test_complete(result: r, worker_id: 0)
@@ -39,7 +39,7 @@ test "colored dots ansi when color true" do
     line: 1,
     fn: -> {},
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   rep.on_test_complete(result: Verity::Runner::Result.new(test: t, status: :pass, error: nil), worker_id: 0)
   assert_match pattern: /\e\[32m\.\e\[0m/, actual: io.string

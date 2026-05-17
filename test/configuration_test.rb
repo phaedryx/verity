@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# Triple suite (compare / redundant proof): verity/configuration_test.rb · spec/verity/configuration_spec.rb
+
 require "minitest/autorun"
 require "fileutils"
 require_relative "../lib/verity"
@@ -8,7 +10,7 @@ require_relative "verity_test_helper"
 class ConfigurationTest < Minitest::Test
   include VerityTestHelper
 
-  def test_defaults_use_memory_manifest_and_test_globs
+  def test_defaults_use_file_manifest_cpus_workers_and_test_globs
     # Arrange
     reset_verity_configuration_only!
 
@@ -16,10 +18,13 @@ class ConfigurationTest < Minitest::Test
     config = Verity.configuration
 
     # Assert
-    assert_equal ":memory:", config.manifest_path
-    assert_predicate config, :memory_manifest?
+    assert_equal "verity/manifest.db", config.manifest_path
+    refute_predicate config, :memory_manifest?
     assert_equal ["verity/**/*_test.rb"], config.test_globs
-    assert_equal 1, config.worker_count
+    assert_equal :cpus, config.worker_count
+    assert_equal :random, config.test_order
+    assert_nil config.shuffle_seed
+    assert_equal [], config.location_filters
     assert_instance_of Verity::Reporters::ColoredDotsReporter, config.reporter
   end
 
@@ -115,5 +120,174 @@ class ConfigurationTest < Minitest::Test
         assert_equal %w[test/b_test.rb verity/a_test.rb], files
       end
     end
+  end
+
+  def test_ordered_runnable_random_explicit_seed_is_reproducible_and_silent
+    Verity.reset_configuration!
+    Verity::Registry.clear
+    Verity.configure do |c|
+      c.test_order = :random
+      c.shuffle_seed = 13_579
+    end
+    %w[a b c].each do |name|
+      Verity::Registry.register(
+        Verity::Test.new(
+          fingerprint: "#{name}.rb:#{name * 16}",
+          description: name,
+          tags: [],
+          timeout: nil,
+          requires: [],
+          resources: {},
+          file: "#{name}.rb",
+          line: 1,
+          fn: -> {},
+          group_path: [].freeze,
+          inherited_group_tags: [].freeze,
+          group_scopes: [].freeze
+        )
+      )
+    end
+    first = nil
+    err = capture_io { first = Verity.send(:ordered_runnable_tests).map(&:fingerprint) }.last
+    assert_empty err
+
+    Verity::Registry.clear
+    %w[a b c].each do |name|
+      Verity::Registry.register(
+        Verity::Test.new(
+          fingerprint: "#{name}.rb:#{name * 16}",
+          description: name,
+          tags: [],
+          timeout: nil,
+          requires: [],
+          resources: {},
+          file: "#{name}.rb",
+          line: 1,
+          fn: -> {},
+          group_path: [].freeze,
+          inherited_group_tags: [].freeze,
+          group_scopes: [].freeze
+        )
+      )
+    end
+    Verity.configure do |c|
+      c.test_order = :random
+      c.shuffle_seed = 13_579
+    end
+    second = nil
+    err2 = capture_io { second = Verity.send(:ordered_runnable_tests).map(&:fingerprint) }.last
+    assert_empty err2
+    assert_equal first, second
+  end
+
+  def test_ordered_runnable_random_auto_seed_prints_integer_line_to_stderr
+    Verity.reset_configuration!
+    Verity::Registry.clear
+    Verity.configure do |c|
+      c.test_order = :random
+      c.shuffle_seed = nil
+    end
+    %w[a b c].each do |name|
+      Verity::Registry.register(
+        Verity::Test.new(
+          fingerprint: "#{name}.rb:#{name * 16}",
+          description: name,
+          tags: [],
+          timeout: nil,
+          requires: [],
+          resources: {},
+          file: "#{name}.rb",
+          line: 1,
+          fn: -> {},
+          group_path: [].freeze,
+          inherited_group_tags: [].freeze,
+          group_scopes: [].freeze
+        )
+      )
+    end
+    err = capture_io { Verity.send(:ordered_runnable_tests) }.last
+    assert_match(/\A\d+\n\z/, err)
+    assert_kind_of Integer, Verity.configuration.shuffle_seed
+  end
+
+  def test_shuffle_seed_implies_random_order_even_when_test_order_fingerprint
+    Verity.reset_configuration!
+    Verity::Registry.clear
+    Verity.configure do |c|
+      c.test_order = :fingerprint
+      c.shuffle_seed = 42
+    end
+    %w[z a m].each do |name|
+      Verity::Registry.register(
+        Verity::Test.new(
+          fingerprint: "#{name}.rb:#{name * 16}",
+          description: name,
+          tags: [],
+          timeout: nil,
+          requires: [],
+          resources: {},
+          file: "#{name}.rb",
+          line: 1,
+          fn: -> {},
+          group_path: [].freeze,
+          inherited_group_tags: [].freeze,
+          group_scopes: [].freeze
+        )
+      )
+    end
+    first = Verity.send(:ordered_runnable_tests).map(&:fingerprint)
+    refute_equal first.sort, first
+
+    Verity::Registry.clear
+    %w[z a m].each do |name|
+      Verity::Registry.register(
+        Verity::Test.new(
+          fingerprint: "#{name}.rb:#{name * 16}",
+          description: name,
+          tags: [],
+          timeout: nil,
+          requires: [],
+          resources: {},
+          file: "#{name}.rb",
+          line: 1,
+          fn: -> {},
+          group_path: [].freeze,
+          inherited_group_tags: [].freeze,
+          group_scopes: [].freeze
+        )
+      )
+    end
+    Verity.configure do |c|
+      c.test_order = :fingerprint
+      c.shuffle_seed = 42
+    end
+    second = Verity.send(:ordered_runnable_tests).map(&:fingerprint)
+    assert_equal first, second
+  end
+
+  def test_ordered_runnable_fingerprint_sorts
+    Verity.reset_configuration!
+    Verity::Registry.clear
+    Verity.configure { |c| c.test_order = :fingerprint }
+    %w[z a m].each do |name|
+      Verity::Registry.register(
+        Verity::Test.new(
+          fingerprint: "#{name}.rb:#{name * 16}",
+          description: name,
+          tags: [],
+          timeout: nil,
+          requires: [],
+          resources: {},
+          file: "#{name}.rb",
+          line: 1,
+          fn: -> {},
+          group_path: [].freeze,
+          inherited_group_tags: [].freeze,
+          group_scopes: [].freeze
+        )
+      )
+    end
+    fingerprints = Verity.send(:ordered_runnable_tests).map(&:fingerprint)
+    assert_equal fingerprints.sort, fingerprints
   end
 end

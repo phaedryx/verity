@@ -32,6 +32,23 @@ RSpec.describe Verity::Assertions do
     end
   end
 
+  describe "#assert_nil" do
+    it("passes with nil") { ctx.assert_nil(nil) }
+
+    it "fails with a non-nil value" do
+      expect { ctx.assert_nil(:x) }.to raise_error(AE, /Expected nil/)
+    end
+  end
+
+  describe "#refute_nil" do
+    it("passes with false") { ctx.refute_nil(false) }
+    it("passes with zero")  { ctx.refute_nil(0) }
+
+    it "fails with nil" do
+      expect { ctx.refute_nil(nil) }.to raise_error(AE, /non-nil/)
+    end
+  end
+
   describe "#assert_equal" do
     it "passes when values are equal" do
       ctx.assert_equal(actual: 1, expected: 1)

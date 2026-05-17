@@ -17,7 +17,7 @@ test "skipped? and runnable_tests include only non-skipped" do
     line: 1,
     fn: -> {},
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   t_skip = Verity::Test.new(
     fingerprint: "sk_b.rb:bbbbbbbbbbbbbbbb",
@@ -30,7 +30,7 @@ test "skipped? and runnable_tests include only non-skipped" do
     line: 1,
     fn: -> {},
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   Verity::Registry.register(t_run)
   Verity::Registry.register(t_skip)
@@ -54,7 +54,7 @@ test "runner run only executes non-skipped in explicit list" do
     line: 1,
     fn: -> { ran << :ok },
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   t_skip = Verity::Test.new(
     fingerprint: "sk_no.rb:bbbbbbbbbbbbbbbb",
@@ -67,7 +67,7 @@ test "runner run only executes non-skipped in explicit list" do
     line: 2,
     fn: -> { ran << :skip },
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   Verity::Registry.register(t_ok)
   Verity::Registry.register(t_skip)
@@ -76,7 +76,7 @@ test "runner run only executes non-skipped in explicit list" do
   assert Verity::Runner.new(reporter: rep).run([t_ok, t_skip])
   assert_equal actual: rep.run_starts, expected: [{ total: 1, worker_id: 0 }]
   assert_equal actual: rep.test_completes,
-    expected: [{ status: :pass, worker_id: 0 }, { status: :skip, worker_id: 0 }]
+    expected: [{ status: :pass, error: nil, worker_id: 0 }, { status: :skip, error: nil, worker_id: 0 }]
   assert_equal actual: rep.run_finishes.size, expected: 1
   fin = rep.run_finishes.first
   assert_equal actual: fin[:worker_id], expected: 0
@@ -112,6 +112,7 @@ test "verity run skips tagged examples in isolated project" do
         Verity.configure do |c|
           c.test_globs = ["verity/**/*_test.rb"]
           c.manifest_path = ":memory:"
+          c.worker_count = 1
         end
         ok = Verity.run
         reg = Verity::Registry.all.size

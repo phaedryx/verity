@@ -16,7 +16,7 @@ RSpec.describe Verity::Manifest do
       line: __LINE__,
       fn: -> {},
       group_path: ["Suite"],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
   end
 
@@ -206,6 +206,48 @@ RSpec.describe Verity::Manifest do
       tests = (1..5).map { |i| make_test("test_#{i}", fingerprint: "fp#{i}:abcdef0123456789") }
       manifest.replace_tests(tests)
       expect(manifest.example_count).to eq(5)
+    end
+  end
+
+  describe "#reclaim_abandoned_running!" do
+    before { manifest.migrate! }
+
+    it "returns 0 when no rows are running" do
+      manifest.replace_tests([make_test("only")])
+      expect(manifest.reclaim_abandoned_running!).to eq(0)
+    end
+
+    it "marks running rows as errored and returns the count" do
+      t = make_test("orphan", fingerprint: "orph:abcdef0123456789")
+      manifest.replace_tests([t])
+      manifest.claim_next(0)
+
+      expect(manifest.reclaim_abandoned_running!).to eq(1)
+
+      status = manifest.db.get_first_value("SELECT status FROM tests WHERE fingerprint = ?", t.fingerprint)
+      expect(status).to eq("errored")
+    end
+  end
+
+  describe "#each_parallel_replay_result" do
+    before { manifest.migrate! }
+
+    it "replays errors as RuntimeError without instantiating arbitrary stored class names" do
+      t = make_test("boom", fingerprint: "boom:abcdef0123456789")
+      manifest.replace_tests([t])
+      manifest.claim_next(0)
+      manifest.record_error(t.fingerprint, RuntimeError.new("orig"))
+      manifest.db.execute(
+        "UPDATE tests SET failure = ? WHERE fingerprint = ?",
+        ['{"class":"Object","message":"unsafe"}', t.fingerprint]
+      )
+
+      results = manifest.each_parallel_replay_result.to_a
+      expect(results.size).to eq(1)
+      err = results.first.error
+      expect(err).to be_a(RuntimeError)
+      expect(err.message).to include("Object")
+      expect(err.message).to include("unsafe")
     end
   end
 end

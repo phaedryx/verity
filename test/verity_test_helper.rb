@@ -6,6 +6,7 @@ module VerityTestHelper
     Verity.reset_configuration!
     Verity::Registry.clear
     Verity.hooks.each_value(&:clear)
+    Verity.configure { |c| c.test_order = :fingerprint } # quiet, deterministic Minitest runs
   end
 
   def reset_verity_configuration_only!

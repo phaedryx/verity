@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# Triple suite (compare / redundant proof): verity/build_reporter_test.rb · spec/verity/build_reporter_spec.rb
+
 require "minitest/autorun"
 require "fileutils"
 require_relative "../lib/verity"

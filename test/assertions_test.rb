@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# Triple suite (compare / redundant proof): verity/assertions_test.rb · spec/verity/assertions_spec.rb
+
 require "minitest/autorun"
 require_relative "../lib/verity/assertions"
 
@@ -75,6 +77,28 @@ class AssertionsTest < Minitest::Test
     subj = assertion_subject
     # Act & Assert
     assert_raises(AE) { subj.refute("truthy") }
+  end
+
+  def test_assert_nil_passes_with_nil
+    subj = assertion_subject
+    subj.assert_nil(nil)
+  end
+
+  def test_assert_nil_fails_with_non_nil
+    subj = assertion_subject
+    err = assert_raises(AE) { subj.assert_nil(0) }
+    assert_match(/Expected nil/, err.message)
+  end
+
+  def test_refute_nil_passes_with_non_nil
+    subj = assertion_subject
+    subj.refute_nil(false)
+    subj.refute_nil("")
+  end
+
+  def test_refute_nil_fails_with_nil
+    subj = assertion_subject
+    assert_raises(AE) { subj.refute_nil(nil) }
   end
 
   # ── assert_equal / refute_equal ────────────────────────────────────────────

@@ -134,3 +134,115 @@ end
 test "refute_includes fails when in collection" do
   assert_raises(DOGFOOD_AE) { refute_includes item: 2, collection: [1, 2, 3] }
 end
+
+test "assert fails with nil" do
+  err = assert_raises(DOGFOOD_AE) { assert nil }
+  assert_match pattern: /Expected truthy/, actual: err.message
+end
+
+test "refute passes with nil" do
+  refute nil
+end
+
+test "assert_nil passes nil" do
+  assert_nil nil
+end
+
+test "assert_nil fails non-nil" do
+  err = assert_raises(DOGFOOD_AE) { assert_nil(:x) }
+  assert_match pattern: /Expected nil/, actual: err.message
+end
+
+test "refute_nil passes false or zero" do
+  refute_nil false
+  refute_nil 0
+end
+
+test "refute_nil fails nil" do
+  err = assert_raises(DOGFOOD_AE) { refute_nil(nil) }
+  assert_match pattern: /non-nil/, actual: err.message
+end
+
+test "assert_raises passes for subclass exception" do
+  assert_raises(StandardError) { raise RuntimeError, "boom" }
+end
+
+test "assert_raises returns caught exception message" do
+  e = assert_raises(RuntimeError) { raise RuntimeError, "boom" }
+  assert_equal actual: e.message, expected: "boom"
+end
+
+test "assert_raises fails when nothing raised" do
+  err = assert_raises(DOGFOOD_AE) { assert_raises(RuntimeError) {} }
+  assert_match pattern: /nothing was raised/, actual: err.message
+end
+
+test "assert_raises fails wrong error class" do
+  assert_raises(DOGFOOD_AE) { assert_raises(ArgumentError) { raise RuntimeError } }
+end
+
+test "assert_raises requires at least one class" do
+  assert_raises(ArgumentError) { assert_raises {} }
+end
+
+test "refute_raises propagates unlisted exceptions" do
+  assert_raises(ArgumentError) { refute_raises(RuntimeError) { raise ArgumentError, "wrong" } }
+end
+
+test "refute_raises fails when class and message match" do
+  assert_raises(DOGFOOD_AE) do
+    refute_raises(RuntimeError, match: "boom") { raise RuntimeError, "boom" }
+  end
+end
+
+test "assert_equal passes at in_delta boundaries" do
+  assert_in_delta expected: 1.0, actual: 1.1, delta: 0.1
+end
+
+test "assert_raises regexp match fails mismatch" do
+  assert_raises(DOGFOOD_AE) { assert_raises(RuntimeError, match: /\d+/) { raise RuntimeError, "no digits" } }
+end
+
+test "assert_match passes string substring" do
+  assert_match pattern: "ell", actual: "hello"
+end
+
+test "assert_match fails non-matching string pattern" do
+  assert_raises(DOGFOOD_AE) { assert_match pattern: "xyz", actual: "hello" }
+end
+
+test "refute_match passes non-matching string" do
+  refute_match pattern: "xyz", actual: "hello"
+end
+
+test "refute_match fails substring match" do
+  assert_raises(DOGFOOD_AE) { refute_match pattern: "ell", actual: "hello" }
+end
+
+test "assert_includes substring in string collection" do
+  assert_includes item: "ell", collection: "hello"
+end
+
+test "assert uses string message failure" do
+  err = assert_raises(DOGFOOD_AE) { assert(false, message: "custom msg") }
+  assert_match pattern: /custom msg/, actual: err.message
+end
+
+test "assert evaluates proc message lazily on failure only" do
+  called = false
+  err = assert_raises(DOGFOOD_AE) do
+    assert(false, message: lambda {
+      called = true
+      "lazy"
+    })
+  end
+  assert_equal actual: called, expected: true
+  assert_match pattern: /lazy/, actual: err.message
+
+  called2 = false
+  assert(true, message: lambda {
+    called2 = true
+    "ignored"
+  })
+  refute called2
+end

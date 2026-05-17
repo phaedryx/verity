@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "fileutils"
 require "json"
 require "sqlite3"
 
@@ -8,7 +9,7 @@ module Verity
   # workers. Each row tracks a single test's fingerprint, metadata, and
   # execution status. Workers atomically claim pending rows to run.
   class Manifest
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
 
     # Public: Immutable value object returned by claim_next representing a
     # single test row from the manifest with all its stored metadata.
@@ -25,10 +26,11 @@ module Verity
     # status      - Symbol (:pending, :running, :passed, :failed, :errored).
     # worker_id   - Integer or nil.
     # failure     - Hash with "class", "message", "backtrace" keys, or nil.
+    # queue_index - Integer coordinator dispatch order for this run.
     ClaimedRow = Data.define(
       :fingerprint, :file, :line, :description, :method,
       :tags, :requires, :resources, :timeout,
-      :status, :worker_id, :failure
+      :status, :worker_id, :failure, :queue_index
     )
 
     # Public: Open (or create) a manifest database at the given path.
@@ -43,6 +45,7 @@ module Verity
     def initialize(path, busy_timeout_ms: 5000)
       @memory = (path == ":memory:")
       @busy_timeout_ms = busy_timeout_ms
+      FileUtils.mkdir_p(File.dirname(File.expand_path(path))) unless @memory
       @db = SQLite3::Database.new(path)
       configure_connection!
     end
@@ -60,52 +63,60 @@ module Verity
     #
     # Returns nothing.
     def migrate!
-      version = @db.get_first_value("PRAGMA user_version").to_i
-      return if version >= SCHEMA_VERSION
+      loop do
+        version = @db.get_first_value("PRAGMA user_version").to_i
+        break if version >= SCHEMA_VERSION
 
-      if version.zero?
-        @db.transaction do
-          @db.execute_batch(<<~SQL)
-            CREATE TABLE IF NOT EXISTS tests (
-              fingerprint     TEXT PRIMARY KEY,
-              file            TEXT NOT NULL,
-              line            INTEGER NOT NULL,
-              description     TEXT,
-              method          TEXT NOT NULL,
-              tags            TEXT,
-              requires        TEXT,
-              resources       TEXT,
-              timeout         REAL,
-              status          TEXT NOT NULL DEFAULT 'pending',
-              worker_id       INTEGER,
-              failure         TEXT,
-              CHECK (status IN ('pending', 'running', 'passed', 'failed', 'errored'))
-            );
-            CREATE INDEX IF NOT EXISTS idx_tests_pending
-              ON tests (status, fingerprint);
-          SQL
-          @db.execute("PRAGMA user_version = #{SCHEMA_VERSION}")
+        if version.zero?
+          @db.transaction do
+            @db.execute_batch(<<~SQL)
+              CREATE TABLE IF NOT EXISTS tests (
+                fingerprint     TEXT PRIMARY KEY,
+                file            TEXT NOT NULL,
+                line            INTEGER NOT NULL,
+                description     TEXT,
+                method          TEXT NOT NULL,
+                tags            TEXT,
+                requires        TEXT,
+                resources       TEXT,
+                timeout         REAL,
+                queue_index     INTEGER NOT NULL DEFAULT 0,
+                status          TEXT NOT NULL DEFAULT 'pending',
+                worker_id       INTEGER,
+                failure         TEXT,
+                CHECK (status IN ('pending', 'running', 'passed', 'failed', 'errored'))
+              );
+              CREATE INDEX IF NOT EXISTS idx_tests_pending
+                ON tests (status, fingerprint);
+            SQL
+            @db.execute("PRAGMA user_version = #{SCHEMA_VERSION}")
+          end
+        elsif version == 1
+          @db.transaction do
+            @db.execute("DROP INDEX IF EXISTS idx_tests_pending_duration")
+            @db.execute("ALTER TABLE tests DROP COLUMN duration_p50")
+            @db.execute(<<~SQL)
+              CREATE INDEX IF NOT EXISTS idx_tests_pending
+                ON tests (status, fingerprint);
+            SQL
+            @db.execute("PRAGMA user_version = 2")
+          end
+        elsif version == 2
+          @db.transaction do
+            @db.execute("ALTER TABLE tests ADD COLUMN queue_index INTEGER NOT NULL DEFAULT 0")
+            @db.execute("PRAGMA user_version = #{SCHEMA_VERSION}")
+          end
+        else
+          raise ArgumentError, "unsupported manifest schema user_version #{version}"
         end
-        return
-      end
-
-      return unless version == 1
-
-      @db.transaction do
-        @db.execute("DROP INDEX IF EXISTS idx_tests_pending_duration")
-        @db.execute("ALTER TABLE tests DROP COLUMN duration_p50")
-        @db.execute(<<~SQL)
-          CREATE INDEX IF NOT EXISTS idx_tests_pending
-            ON tests (status, fingerprint);
-        SQL
-        @db.execute("PRAGMA user_version = #{SCHEMA_VERSION}")
       end
     end
 
     # Public: Atomically clear the tests table and insert the given tests as
     # pending rows. Called once per run before workers begin claiming.
     #
-    # tests - Array of Verity::Test instances.
+    # tests - Array of Verity::Test instances in coordinator dispatch order.
+    #         Each element's index becomes queue_index (claim order).
     #
     # Returns nothing.
     def replace_tests(tests)
@@ -114,14 +125,14 @@ module Verity
         stmt = @db.prepare(<<~SQL)
           INSERT INTO tests (
             fingerprint, file, line, description, method,
-            tags, requires, resources, timeout,
+            tags, requires, resources, timeout, queue_index,
             status, worker_id, failure
           ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
             'pending', NULL, NULL
           )
         SQL
-        tests.each do |t|
+        tests.each_with_index do |t, queue_index|
           stmt.execute!(
             t.fingerprint,
             t.file,
@@ -131,7 +142,8 @@ module Verity
             dump_json(t.tags),
             dump_json(t.requires),
             dump_json(t.resources),
-            t.timeout
+            t.timeout,
+            queue_index
           )
         end
         stmt.close
@@ -151,13 +163,13 @@ module Verity
         WHERE fingerprint = (
           SELECT fingerprint FROM tests
           WHERE status = 'pending'
-          ORDER BY fingerprint ASC
+          ORDER BY queue_index ASC, fingerprint ASC
           LIMIT 1
         )
         RETURNING
           fingerprint, file, line, description, method,
           tags, requires, resources, timeout,
-          status, worker_id, failure
+          status, worker_id, failure, queue_index
       SQL
       return nil if rows.size < 2
 
@@ -208,6 +220,29 @@ module Verity
       SQL
     end
 
+    # Public: Mark every row still in +running+ status as +errored+ with a
+    # coordinator-level message. Call this after worker processes exit when
+    # a worker may have terminated without recording a result (crash, kill),
+    # so replay and status counts stay consistent.
+    #
+    # Returns the number of rows updated.
+    def reclaim_abandoned_running!
+      n = 0
+      @db.transaction do
+        n = @db.get_first_value("SELECT COUNT(*) FROM tests WHERE status = 'running'").to_i
+        if n > 0
+          err = RuntimeError.new("test abandoned: worker exited before recording a result")
+          payload = encode_failure(err)
+          @db.execute(<<~SQL, [payload])
+            UPDATE tests
+            SET status = 'errored', failure = ?, worker_id = NULL
+            WHERE status = 'running'
+          SQL
+        end
+      end
+      n
+    end
+
     # Public: Total number of test rows in the manifest.
     #
     # Returns an Integer.
@@ -244,7 +279,89 @@ module Verity
       end
     end
 
+    # Public: After parallel workers finish, yield Verity::Runner::Result once per
+    # finished row (passed, failed, or errored) in dispatch (queue_index) order so
+    # the parent can replay reporter output (dots, documentation lines, etc.).
+    # Workers use NullReporter during execution; child processes do not invoke the user's
+    # reporter.
+    #
+    # Yields Verity::Runner::Result.
+    #
+    # Returns Enumerator when no block is given.
+    def each_parallel_replay_result
+      return enum_for(:each_parallel_replay_result) unless block_given?
+
+      data = @db.execute2(<<~SQL)
+        SELECT fingerprint, file, line, description, method,
+               tags, requires, resources, timeout,
+               status, failure, queue_index
+        FROM tests
+        WHERE status IN ('passed', 'failed', 'errored')
+        ORDER BY queue_index ASC, fingerprint ASC
+      SQL
+      headers = data[0]
+      Array(data[1..]).each do |vals|
+        hash = headers.zip(vals).to_h
+        row = hydrate_row(hash)
+        result_status =
+          case row.status
+          when :passed then :pass
+          when :failed then :fail
+          when :errored then :error
+          else row.status
+          end
+        err = replay_exception(result_status, row.failure)
+        resources = normalize_resource_keys(row.resources)
+        test = Verity::Test.new(
+          fingerprint: row.fingerprint,
+          description: row.description.to_s,
+          tags: Array(row.tags).map(&:to_sym),
+          timeout: row.timeout,
+          requires: Array(row.requires).map(&:to_sym),
+          resources: resources,
+          file: row.file,
+          line: row.line,
+          fn: -> { raise "parallel replay stub" },
+          group_path: [].freeze,
+          inherited_group_tags: [].freeze,
+          group_scopes: [].freeze
+        )
+        yield Verity::Runner::Result.new(test: test, status: result_status, error: err)
+      end
+    end
+
     private
+
+    def normalize_resource_keys(resources)
+      case resources
+      when Hash
+        resources.transform_keys { |k| k.respond_to?(:to_sym) ? k.to_sym : k }
+      else
+        {}
+      end
+    end
+
+    def replay_exception(status, failure_h)
+      return nil if failure_h.nil? || failure_h.empty?
+
+      msg = failure_h["message"].to_s
+      case status
+      when :fail
+        Verity::AssertionError.new(msg)
+      when :error
+        cname = failure_h["class"].to_s
+        replay_error_for_parallel_report(cname, msg)
+      end
+    end
+
+    # Parallel replay must not +const_get+ arbitrary class names from the DB.
+    def replay_error_for_parallel_report(cname, msg)
+      if cname.empty?
+        RuntimeError.new(msg.empty? ? "error" : msg)
+      else
+        RuntimeError.new("#{cname}: #{msg}")
+      end
+    end
 
     def configure_connection!
       @db.busy_timeout = @busy_timeout_ms
@@ -293,7 +410,8 @@ module Verity
         timeout: hash["timeout"]&.to_f,
         status: hash["status"].to_sym,
         worker_id: hash["worker_id"]&.to_i,
-        failure: parse_failure(hash["failure"])
+        failure: parse_failure(hash["failure"]),
+        queue_index: hash["queue_index"].nil? ? 0 : Integer(hash["queue_index"])
       )
     end
 

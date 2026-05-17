@@ -18,7 +18,7 @@ test "dots reporter prints dot for pass" do
     line: 1,
     fn: -> {},
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   rep.on_test_complete(result: Verity::Runner::Result.new(test: t, status: :pass, error: nil), worker_id: 0)
   assert_equal actual: io.string, expected: "."
@@ -38,7 +38,7 @@ test "dots reporter prints F for fail" do
     line: 1,
     fn: -> {},
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   rep.on_test_complete(
     result: Verity::Runner::Result.new(test: t, status: :fail, error: StandardError.new("x")),
@@ -61,7 +61,7 @@ test "dots reporter prints E for error" do
     line: 1,
     fn: -> {},
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   rep.on_test_complete(
     result: Verity::Runner::Result.new(test: t, status: :error, error: RuntimeError.new("x")),
@@ -70,7 +70,7 @@ test "dots reporter prints E for error" do
   assert_equal actual: io.string, expected: "E"
 end
 
-test "dots reporter skip does not crash" do
+test "dots reporter prints S for skip" do
   io = StringIO.new
   rep = Verity::Reporters::DotsReporter.new(io)
   t = Verity::Test.new(
@@ -84,13 +84,13 @@ test "dots reporter skip does not crash" do
     line: 1,
     fn: -> {},
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   rep.on_test_complete(
     result: Verity::Runner::Result.new(test: t, status: :skip, error: nil),
     worker_id: 0
   )
-  assert_equal actual: io.string, expected: ""
+  assert_equal actual: io.string, expected: "S"
 end
 
 test "dots reporter on_run_finish prints summary" do

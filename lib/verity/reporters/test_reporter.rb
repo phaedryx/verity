@@ -19,7 +19,7 @@ module Verity
       # Each Hash contains :total and :worker_id.
       #
       # Public: Array of Hashes recorded from on_test_complete calls.
-      # Each Hash contains :status and :worker_id.
+      # Each Hash contains :status, :error (exception or nil), and :worker_id.
       #
       # Public: Array of Hashes recorded from on_run_finish calls.
       # Each Hash contains :summary and :worker_id.
@@ -33,7 +33,7 @@ module Verity
       end
 
       def on_test_complete(result:, worker_id:)
-        @test_completes << { status: result.status, worker_id: worker_id }
+        @test_completes << { status: result.status, error: result.error, worker_id: worker_id }
       end
 
       def on_run_finish(summary:, worker_id:)

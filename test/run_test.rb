@@ -1,13 +1,22 @@
 # frozen_string_literal: true
 
+# Triple suite (compare / redundant proof): verity/run_test.rb · spec/verity/run_spec.rb
+
 require "minitest/autorun"
 require "fileutils"
-require "sqlite3"
 require_relative "../lib/verity"
 require_relative "verity_test_helper"
 
 class RunTest < Minitest::Test
   include VerityTestHelper
+
+  # These examples exercise Verity.run in-process; silence the default
+  # ColoredDotsReporter so dots/summary lines are not interleaved with Minitest
+  # progress (which reads like a failed parallel run right after a success line).
+  def reset_verity_process_state!
+    super
+    Verity.configure { |c| c.reporter = Verity::Reporters::NullReporter.new }
+  end
 
   def test_run_discovers_loads_and_passes
     reset_verity_process_state!
@@ -24,6 +33,7 @@ class RunTest < Minitest::Test
         Verity.configure do |c|
           c.test_globs = ["verity/**/*_test.rb"]
           c.manifest_path = ":memory:"
+          c.worker_count = 1
         end
 
         outcome = Verity.run(worker_id: 11)
@@ -50,6 +60,7 @@ class RunTest < Minitest::Test
         Verity.configure do |c|
           c.test_globs = ["verity/**/*_test.rb"]
           c.manifest_path = ":memory:"
+          c.worker_count = 1
         end
 
         refute Verity.run(worker_id: 2)
@@ -66,6 +77,7 @@ class RunTest < Minitest::Test
         Verity.configure do |c|
           c.test_globs = ["verity/does_not_exist/**/*_test.rb"]
           c.manifest_path = ":memory:"
+          c.worker_count = 1
         end
 
         assert_equal true, Verity.run
@@ -163,12 +175,11 @@ class RunTest < Minitest::Test
         assert_equal true, Verity.run
       end
 
-      sqlite = SQLite3::Database.new(db)
+      manifest = Verity::Manifest.open(db)
       begin
-        rows = sqlite.execute("SELECT status, COUNT(*) AS n FROM tests GROUP BY status").to_a
-        assert_equal [["passed", 15]], rows
+        assert_equal({ "passed" => 15 }, manifest.count_by_status)
       ensure
-        sqlite.close
+        manifest.close
       end
 
       cleanup_sqlite_sidecars(dir)

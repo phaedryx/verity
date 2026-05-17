@@ -31,13 +31,13 @@ test "composite on_test_complete delegates to all reporters" do
     line: 1,
     fn: -> {},
     group_path: [],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   result = Verity::Runner::Result.new(test: t, status: :pass, error: nil)
   composite.on_test_complete(result: result, worker_id: 1)
 
   [r1, r2].each do |r|
-    assert_equal actual: r.test_completes, expected: [{ status: :pass, worker_id: 1 }]
+    assert_equal actual: r.test_completes, expected: [{ status: :pass, error: nil, worker_id: 1 }]
   end
 end
 

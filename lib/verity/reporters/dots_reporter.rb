@@ -14,13 +14,14 @@ module Verity
         @io = io
       end
 
-      # Public: Print a dot, F, or E for the completed test.
+      # Public: Print a dot, F, E, or S (skip) for the completed test.
       def on_test_complete(result:, worker_id:)
         char =
           case result.status
           when :pass then "."
           when :fail then "F"
           when :error then "E"
+          when :skip then "S"
           end
         @io.print char
         @io.flush

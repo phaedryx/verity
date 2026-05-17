@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# Triple suite (compare / redundant proof): verity/fingerprint_test.rb · spec/verity/fingerprint_spec.rb
+
 require "minitest/autorun"
 require "fileutils"
 require_relative "../lib/verity"

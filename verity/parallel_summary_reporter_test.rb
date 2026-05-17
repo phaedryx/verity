@@ -51,3 +51,21 @@ test "parallel summary emit defaults missing count keys" do
   )
   assert_match pattern: /3 tests in manifest: 3 passed, 0 failed, 0 errored, 0 pending, 0 running/, actual: io.string
 end
+
+test "parallel summary emit shows skipped count when nonzero" do
+  io = StringIO.new
+  Verity::Reporters::ParallelSummaryReporter.new(io).emit(
+    counts: { "passed" => 5, "failed" => 0, "errored" => 0, "pending" => 0, "running" => 0, "skipped" => 3 },
+    problem_rows: []
+  )
+  assert_match pattern: /5 tests in manifest.*3 skipped/, actual: io.string
+end
+
+test "parallel summary emit omits skipped phrase when zero" do
+  io = StringIO.new
+  Verity::Reporters::ParallelSummaryReporter.new(io).emit(
+    counts: { "passed" => 2, "skipped" => 0 },
+    problem_rows: []
+  )
+  refute_match pattern: /skipped/, actual: io.string
+end

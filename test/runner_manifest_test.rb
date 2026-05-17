@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# Triple suite (compare / redundant proof): verity/runner_manifest_test.rb · spec/verity/runner_manifest_spec.rb
+
 require "minitest/autorun"
 require_relative "../lib/verity"
 require_relative "verity_test_helper"
@@ -67,7 +69,7 @@ class RunnerManifestTest < Minitest::Test
       line: 1,
       fn: -> { raise "boom" },
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
     Verity::Registry.register(good)
     Verity::Registry.register(bad)
@@ -105,7 +107,7 @@ class RunnerManifestTest < Minitest::Test
       line: 1,
       fn: -> {},
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
     manifest.replace_tests([orphan_row])
     Verity::Registry.clear
@@ -174,7 +176,7 @@ class RunnerManifestTest < Minitest::Test
       line: 1,
       fn: -> {},
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
   end
 
@@ -190,7 +192,7 @@ class RunnerManifestTest < Minitest::Test
       line: 1,
       fn: -> { raise Verity::AssertionError, "fails" },
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
   end
 end

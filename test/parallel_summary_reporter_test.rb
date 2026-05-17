@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# Triple suite (compare / redundant proof): verity/parallel_summary_reporter_test.rb · spec/verity/parallel_summary_reporter_spec.rb
+
 require "minitest/autorun"
 require "stringio"
 require_relative "../lib/verity"
@@ -52,5 +54,23 @@ class ParallelSummaryReporterTest < Minitest::Test
       problem_rows: []
     )
     assert_match(/3 tests in manifest: 3 passed, 0 failed, 0 errored, 0 pending, 0 running/, io.string)
+  end
+
+  def test_emit_shows_skipped_count_when_present
+    io = StringIO.new
+    Verity::Reporters::ParallelSummaryReporter.new(io).emit(
+      counts: { "passed" => 5, "failed" => 0, "errored" => 0, "pending" => 0, "running" => 0, "skipped" => 3 },
+      problem_rows: []
+    )
+    assert_match(/5 tests in manifest.*3 skipped/, io.string)
+  end
+
+  def test_emit_omits_skipped_phrase_when_zero
+    io = StringIO.new
+    Verity::Reporters::ParallelSummaryReporter.new(io).emit(
+      counts: { "passed" => 2, "skipped" => 0 },
+      problem_rows: []
+    )
+    refute_match(/skipped/, io.string)
   end
 end

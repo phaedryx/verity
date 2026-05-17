@@ -3,7 +3,8 @@
 module Verity
   module Reporters
     # Public: Like DotsReporter, but uses ANSI colors when outputting to a TTY.
-    # Green for pass, red for failure, yellow for error. Respects NO_COLOR,
+    # Green for pass, red for failure, yellow for error, cyan for skip.
+    # Respects NO_COLOR,
     # FORCE_COLOR, and VERITY_FORCE_COLOR environment variables.
     class ColoredDotsReporter < DotsReporter
       ESC = "\e["
@@ -11,6 +12,7 @@ module Verity
       PASS = "#{ESC}32m"
       FAIL = "#{ESC}31m"
       ERR = "#{ESC}33m"
+      SKIP = "#{ESC}36m"
 
       # Public: Create a new ColoredDotsReporter.
       #
@@ -21,13 +23,14 @@ module Verity
         @color_override = color
       end
 
-      # Public: Print a colored dot, F, or E for the completed test.
+      # Public: Print a colored dot, F, E, or S (skip) for the completed test.
       def on_test_complete(result:, worker_id:)
         char, sequence =
           case result.status
           when :pass  then [".", PASS]
           when :fail  then ["F", FAIL]
           when :error then ["E", ERR]
+          when :skip then ["S", SKIP]
           end
         if color?
           @io.print "#{sequence}#{char}#{RESET}"

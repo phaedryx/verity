@@ -24,6 +24,7 @@ test "run discovers passes in isolated project" do
         Verity.configure do |c|
           c.test_globs = ["verity/**/*_test.rb"]
           c.manifest_path = ":memory:"
+          c.worker_count = 1
         end
         exit(Verity.run(worker_id: 11) ? 0 : 1)
       end
@@ -51,6 +52,7 @@ test "run fails when example fails in isolated project" do
         Verity.configure do |c|
           c.test_globs = ["verity/**/*_test.rb"]
           c.manifest_path = ":memory:"
+          c.worker_count = 1
         end
         exit(Verity.run(worker_id: 2) ? 1 : 0)
       end
@@ -72,6 +74,7 @@ test "run succeeds with no matching files" do
         Verity.configure do |c|
           c.test_globs = ["verity/does_not_exist/**/*_test.rb"]
           c.manifest_path = ":memory:"
+          c.worker_count = 1
         end
         exit(Verity.run ? 0 : 1)
       end

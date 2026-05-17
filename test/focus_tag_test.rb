@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# Triple suite (compare / redundant proof): verity/focus_tag_test.rb · spec/verity/focus_tag_spec.rb
+
 require "minitest/autorun"
 require "fileutils"
 require_relative "../lib/verity"
@@ -82,6 +84,7 @@ class FocusTagTest < Minitest::Test
         Verity.configure do |c|
           c.test_globs = ["verity/**/*_test.rb"]
           c.manifest_path = ":memory:"
+          c.worker_count = 1
         end
 
         assert Verity.run
@@ -106,7 +109,7 @@ class FocusTagTest < Minitest::Test
       line: 1,
       fn: sym,
       group_path: [],
-      inherited_group_tags: []
+      inherited_group_tags: [], group_scopes: []
     )
   end
 

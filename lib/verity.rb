@@ -17,12 +17,15 @@ require_relative "verity/runner"
 module Verity
   VERSION = "0.1.0"
 
+  # Public: Source location of an enclosing `group` block at registration time.
+  GroupScope = Data.define(:title, :file, :line)
+
   # Public: Immutable value object representing a single registered test case.
   #
   # fingerprint          - String content-based identifier for the test body.
   # description          - String human-readable name supplied to the `test` DSL.
   # tags                 - Array of Symbols applied directly to the test.
-  # timeout              - Numeric seconds (or nil) before the test is killed.
+  # timeout              - Numeric seconds (or nil); enforced by Runner with stdlib Timeout.
   # requires             - Array of Symbols naming shared preconditions.
   # resources            - Hash of keyword resources forwarded from `test`.
   # file                 - String absolute path of the source file.
@@ -30,9 +33,10 @@ module Verity
   # fn                   - Proc (block) containing the test body.
   # group_path           - Frozen Array of Strings representing nested group titles.
   # inherited_group_tags - Frozen Array of Symbols from enclosing group tags.
+  # group_scopes         - Frozen Array of GroupScope (enclosing groups, outer first).
   Test = Data.define(
     :fingerprint, :description, :tags, :timeout, :requires, :resources, :file, :line, :fn,
-    :group_path, :inherited_group_tags
+    :group_path, :inherited_group_tags, :group_scopes
   )
 
   # Public: Compute all tags that apply to a test, combining enclosing group
@@ -43,6 +47,31 @@ module Verity
   # Returns an Array of Symbols.
   def self.effective_tags(test)
     Array(test.inherited_group_tags).map(&:to_sym) + Array(test.tags).map(&:to_sym)
+  end
+
+  # Public: Validate a value for Verity::Test#timeout.
+  #
+  # Allows +nil+ (no limit). Otherwise +timeout+ must be a finite Numeric
+  # strictly greater than zero (+Complex+ is rejected).
+  #
+  # Raises ArgumentError when invalid.
+  def self.validate_test_timeout!(timeout)
+    return if timeout.nil?
+
+    unless timeout.is_a?(Numeric) && !timeout.is_a?(Complex)
+      raise ArgumentError,
+            "test timeout must be nil or a positive finite Numeric (got #{timeout.class}: #{timeout.inspect})"
+    end
+
+    non_finite =
+      (timeout.is_a?(Float) && !timeout.finite?) ||
+      (timeout.respond_to?(:infinite?) && !timeout.infinite?.nil?)
+
+    raise ArgumentError, "test timeout must be finite (got #{timeout.inspect})" if non_finite
+
+    return if timeout > 0
+
+    raise ArgumentError, "test timeout must be positive (got #{timeout.inspect})"
   end
 
   # Public: Check whether a test is tagged with :skip.
@@ -65,11 +94,12 @@ module Verity
   # Returns an Array of Verity::Test.
   def self.runnable_tests
     base = Registry.all.reject { skipped?(_1) }
-    if base.any? { focus_tag?(_1) }
+    base = if base.any? { focus_tag?(_1) }
       base.select { focus_tag?(_1) }
     else
       base
     end
+    filter_by_location_filters(base)
   end
 
   # Public: Detect whether focus filtering narrowed the suite — at least one
@@ -84,15 +114,48 @@ module Verity
     candidates.any? { focus_tag?(_1) } && candidates.any? { !focus_tag?(_1) }
   end
 
+  # Internal: Keep tests that match any configured location filter (test line
+  # or an enclosing group line). Paths compared via File.expand_path.
+  #
+  # tests - Array of Verity::Test (typically after skip/focus narrowing).
+  #
+  # Returns a filtered Array.
+  def self.filter_by_location_filters(tests)
+    filters = configuration.location_filters
+    return tests if filters.nil? || filters.empty?
+
+    matched = tests.select { |t| filters.any? { |pair| location_filter_match?(t, pair[0], pair[1]) } }
+    if matched.empty? && !tests.empty?
+      hint = filters.map { |p, l| "#{File.expand_path(p)}:#{l}" }.join(", ")
+      warn "verity: no tests matched location filter (#{hint})"
+    end
+    matched
+  end
+
+  # Internal: True if (path, line) is this test's `test` line or a GroupScope line.
+  def self.location_filter_match?(test, path, line)
+    exp = File.expand_path(path)
+    return true if File.expand_path(test.file) == exp && test.line == line
+
+    test.group_scopes.any? { |g| File.expand_path(g.file) == exp && g.line == line }
+  end
+
   # Internal: Push a group frame onto the current thread's group stack.
   # Called by DSL#group during test file loading.
   #
   # title - String title for the group.
   # tags  - Array of Symbols (default []).
+  # file  - String absolute path of the `group` call site.
+  # line  - Integer line of the `group` call.
   #
   # Returns the updated stack Array.
-  def self.push_group(title, tags: [])
-    entry = { title: title.to_s, tags: Array(tags).map(&:to_sym) }
+  def self.push_group(title, tags:, file:, line:)
+    entry = {
+      title: title.to_s,
+      tags: Array(tags).map(&:to_sym),
+      file: file,
+      line: line
+    }
     (Thread.current[:verity_group_stack] ||= []) << entry
   end
 
@@ -112,6 +175,16 @@ module Verity
     return [].freeze if stack.nil? || stack.empty?
 
     stack.map { _1[:title] }.freeze
+  end
+
+  # Internal: Enclosing group source scopes for the current thread (outer first).
+  #
+  # Returns a frozen Array of GroupScope.
+  def self.group_scopes_for_registration
+    stack = Thread.current[:verity_group_stack]
+    return [].freeze if stack.nil? || stack.empty?
+
+    stack.map { |g| GroupScope.new(g[:title], g[:file], g[:line]) }.freeze
   end
 
   # Internal: Collect all tags from enclosing groups for the current thread,
@@ -253,10 +326,13 @@ module Verity
     def group(title, tags: [], &block)
       raise ArgumentError, "`group` requires a block" unless block
 
-      Verity.push_group(title, tags: tags)
+      loc = caller_locations(1, 1).first
+      pushed = false
+      Verity.push_group(title, tags: tags, file: loc.path, line: loc.lineno)
+      pushed = true
       yield
     ensure
-      Verity.pop_group
+      Verity.pop_group if pushed
     end
 
     # Public: Register a single test case. The block is stored and executed
@@ -264,13 +340,15 @@ module Verity
     #
     # description - String human-readable test name.
     # tags        - Array of Symbols (e.g. :focus, :skip) (default []).
-    # timeout     - Numeric seconds or nil for no timeout (default nil).
+    # timeout     - Numeric seconds or nil for no timeout (default nil). If set,
+    #               must be a positive finite Numeric (+Complex+ and strings are rejected).
     # requires    - Array of Symbols naming shared preconditions (default []).
     # resources   - Hash of keyword arguments forwarded as resource metadata.
     # fn          - Block containing assertions and test logic.
     #
     # Returns the newly registered Verity::Test.
     def test(description, tags: [], timeout: nil, requires: [], **resources, &fn)
+      Verity.validate_test_timeout!(timeout)
       location = caller_locations(1, 1).first
       file = location.path
       line = location.lineno
@@ -288,7 +366,8 @@ module Verity
           line:,
           fn:,
           group_path: Verity.group_path_for_registration,
-          inherited_group_tags: Verity.inherited_group_tags_for_registration
+          inherited_group_tags: Verity.inherited_group_tags_for_registration,
+          group_scopes: Verity.group_scopes_for_registration
         )
       )
     end
@@ -361,6 +440,37 @@ module Verity
     end
   end
 
+  # Internal: Runnable tests in coordinator dispatch order for the manifest
+  # (fingerprint sort or random shuffle). Shuffle is used when test_order is
+  # :random or when shuffle_seed is set. Auto-chosen seeds are printed to stderr
+  # as a single line (the integer only).
+  #
+  # Returns Array of Verity::Test.
+  def self.ordered_runnable_tests
+    list = runnable_tests
+    order = configuration.test_order
+    unless %i[fingerprint random].include?(order)
+      raise ArgumentError,
+            "test_order must be :fingerprint or :random (got #{order.inspect})"
+    end
+
+    rng_seed = configuration.shuffle_seed
+    use_random = order == :random || !rng_seed.nil?
+
+    if use_random
+      s = rng_seed
+      if s.nil?
+        s = Random.new_seed
+        configuration.shuffle_seed = s
+        warn s.to_s
+      end
+      list.shuffle(random: Random.new(s))
+    else
+      list.sort_by(&:fingerprint)
+    end
+  end
+  private_class_method :ordered_runnable_tests
+
   # Public: Main entry point — discover tests, set up the manifest, and
   # execute. When worker_count > 1 the run forks child processes that each
   # claim work from a shared SQLite manifest.
@@ -398,9 +508,27 @@ module Verity
 
       manifest = Manifest.open(path)
       begin
-        counts = manifest.count_by_status
+        abandoned = manifest.reclaim_abandoned_running!
+        ok &&= abandoned.zero?
+
+        rep = configuration.reporter
+        rep.on_run_start(total: manifest.example_count, worker_id: 0)
+
+        manifest.each_parallel_replay_result do |result|
+          rep.on_test_complete(result: result, worker_id: 0)
+        end
+
+        Registry.all.select { skipped?(_1) }.sort_by(&:fingerprint).each do |t|
+          rep.on_test_complete(
+            result: Runner::Result.new(test: t, status: :skip, error: nil),
+            worker_id: 0
+          )
+        end
+
+        skip_count = Registry.all.count { skipped?(_1) }
+        counts = manifest.count_by_status.merge("skipped" => skip_count)
         problem_rows = manifest.failures_for_report
-        configuration.reporter.on_parallel_complete(counts: counts, problem_rows: problem_rows)
+        rep.on_parallel_complete(counts: counts, problem_rows: problem_rows)
       ensure
         manifest.close
       end
@@ -410,7 +538,7 @@ module Verity
       manifest = Manifest.open(path)
       begin
         manifest.migrate!
-        manifest.replace_tests(runnable_tests)
+        manifest.replace_tests(ordered_runnable_tests)
         Runner.new.run_manifest(manifest, worker_id:)
       ensure
         manifest.close
@@ -422,7 +550,7 @@ module Verity
     manifest = Manifest.open(path)
     begin
       manifest.migrate!
-      manifest.replace_tests(runnable_tests)
+      manifest.replace_tests(ordered_runnable_tests)
     ensure
       manifest.close
     end

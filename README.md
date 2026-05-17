@@ -67,15 +67,15 @@ Use `Verity.configure` before `Verity.run` (or ensure defaults match your layout
 
 ```ruby
 Verity.configure do |c|
-  c.manifest_path = ":memory:"              # default; use a path for a persistent SQLite file
+  c.manifest_path = "verity/manifest.db"   # default; path relative to cwd (ignored by git); or ":memory:" for single-process only
   c.test_globs = ["verity/**/*_test.rb"]   # default; set to your Verity discovery globs
-  # c.worker_count = 1                      # default; or :cpus / "cpus" for Etc.nprocessors workers
+  # c.worker_count = :cpus                 # default; or a positive Integer, or "cpus" / :cpu / "cpu"
   # c.reporter = Verity::Reporters::ColoredDotsReporter.new($stdout)  # default
 end
 ```
 
 - **`test_globs`** — array of patterns passed to `Dir.glob`; merged and de-duplicated for **`test_files`**.
-- **`manifest_path`** — SQLite database path, or `":memory:"` for an in-memory DB.
+- **`manifest_path`** — SQLite database path (default **`verity/manifest.db`**), or `":memory:"` for an in-memory DB (only with **`worker_count` 1**).
 - **`worker_count`** — number of parallel worker processes (`Integer` or decimal string), or **`:cpus`** / **`:cpu`** / **`"cpus"`** / **`"cpu"`** to use `Etc.nprocessors` (minimum **1**). Resolved at run time via **`Configuration#resolved_worker_count`**. Parallel runs need a **file** manifest (not `":memory:"`) and **`Kernel#fork`**.
 - **`reporter`** — object that includes `Verity::Reporter` (default: `Verity::Reporters::ColoredDotsReporter` on `$stdout`). See **Custom reporters** below.
 
@@ -199,6 +199,24 @@ Each registered test is a `Data.define` struct with 11 fields:
 | `spec/` | RSpec examples |
 | `verity/` | Verity DSL files (default discovery glob targets `verity/**/*_test.rb`) |
 | `lib/` | Gem implementation |
+
+### Triple suite: compare, convert, and cross-check behavior
+
+Integration scenarios are spelled out three ways on purpose:
+
+| Layer | Paths | Audience |
+|-------|-------|----------|
+| **Dogfood DSL** | `verity/<topic>_test.rb` | Readers learning Verity (`test`, `group`, built-in assertions) |
+| **Minitest** | `test/<topic>_test.rb` | Readers used to `@test`/assert style and class-based suites |
+| **RSpec** | `spec/verity/<topic>_spec.rb` | Readers used to `describe`/`it` matchers |
+
+Matching files share the **same basename** (`foo_test.rb` ↔ `foo_spec.rb`). Scenario titles are aligned so you can open two panes side by side when porting assertions or onboarding a team. Keeping all three suites green is deliberate **redundant proof** — the SQLite manifest and runner stay honest under different loaders and assertions.
+
+Example triplet:
+
+- [`verity/assertions_test.rb`](verity/assertions_test.rb)
+- [`test/assertions_test.rb`](test/assertions_test.rb)
+- [`spec/verity/assertions_spec.rb`](spec/verity/assertions_spec.rb)
 
 ## Design notes
 

@@ -7,12 +7,15 @@ require "tmpdir"
 
 test "configuration defaults" do
   Verity.reset_configuration!
-  config = Verity.configuration
-  assert_equal actual: config.manifest_path, expected: ":memory:"
-  assert config.memory_manifest?
-  assert_equal actual: config.test_globs, expected: ["verity/**/*_test.rb"]
-  assert_equal actual: config.worker_count, expected: 1
-  assert config.reporter.is_a?(Verity::Reporters::ColoredDotsReporter)
+  tmpl = Verity::Configuration.new
+  cfg = Verity.configuration
+  assert_equal actual: cfg.manifest_path, expected: tmpl.manifest_path
+  refute cfg.memory_manifest?
+  assert_equal actual: cfg.test_globs, expected: tmpl.test_globs
+  assert_equal actual: tmpl.test_order, expected: :random
+  assert_nil tmpl.shuffle_seed
+  assert_equal actual: cfg.location_filters, expected: tmpl.location_filters
+  assert tmpl.reporter.is_a?(Verity::Reporters::ColoredDotsReporter)
 ensure
   Verity.reset_configuration!
 end

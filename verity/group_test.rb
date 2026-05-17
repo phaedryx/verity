@@ -23,6 +23,7 @@ test "group nests path and inherits tags" do
   t = Verity::Registry.all.reverse.find { _1.description == "dogfood_nested_leaf" }
   assert t
   assert_equal actual: t.group_path, expected: %w[Outer Inner]
+  assert_equal actual: t.group_scopes.map(&:title), expected: %w[Outer Inner]
   assert_equal actual: t.inherited_group_tags, expected: %i[integration]
   assert_equal actual: Verity.effective_tags(t), expected: %i[integration]
 end
@@ -60,6 +61,19 @@ test "group tags accumulate for effective_tags" do
   assert Verity.skipped?(t)
 end
 
+test "inner group without block does not corrupt outer group stack" do
+  Verity.clear_group_stack!
+  dsl = Object.new.extend(Verity::DSL)
+  dsl.group("DFOuter") do
+    assert_raises(ArgumentError) { dsl.group("DFBad") }
+    dsl.test("dogfood_after_bad_inner") { true }
+  end
+  t = Verity::Registry.all.reverse.find { _1.description == "dogfood_after_bad_inner" }
+  assert t
+  assert_equal actual: t.group_path, expected: ["DFOuter"]
+  assert_equal actual: t.group_scopes.map(&:title), expected: ["DFOuter"]
+end
+
 test "documentation reporter shows nested group headers" do
   io = StringIO.new
   rep = Verity::Reporters::DocumentationReporter.new(io, color: false)
@@ -74,7 +88,7 @@ test "documentation reporter shows nested group headers" do
     line: 1,
     fn: -> {},
     group_path: %w[Alpha],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   b = Verity::Test.new(
     fingerprint: "b.rb:#{"b" * 16}",
@@ -87,7 +101,7 @@ test "documentation reporter shows nested group headers" do
     line: 1,
     fn: -> {},
     group_path: %w[Alpha Beta],
-    inherited_group_tags: []
+    inherited_group_tags: [], group_scopes: []
   )
   rep.on_run_start(total: 2, worker_id: 0)
   rep.on_test_complete(result: Verity::Runner::Result.new(test: a, status: :pass, error: nil), worker_id: 0)

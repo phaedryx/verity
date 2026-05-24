@@ -69,7 +69,7 @@ begin
       c.location_filters = filters unless filters.empty?
     end
   end
-rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
+rescue OptionParser::InvalidOption, OptionParser::MissingArgument, ArgumentError => e
   warn "verity: #{e.message}"
   exit 2
 end

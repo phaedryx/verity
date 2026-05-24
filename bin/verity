@@ -1,0 +1,82 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "optparse"
+
+$LOAD_PATH.unshift File.expand_path("../lib", __dir__)
+require "verity"
+
+begin
+  OptionParser.new do |o|
+    o.banner = "Usage: verity [options] [file-or-glob ...]"
+    o.separator ""
+    o.separator "If file-or-glob arguments are given, only those paths are loaded."
+    o.separator "Use path/to/file.rb:LINE to run the test on that line or every test in the group opened there."
+    o.separator "Otherwise the configured default is used (see Verity::Configuration#test_globs)."
+    o.separator ""
+    o.on(
+      "-r",
+      "--reporter NAME",
+      "Output reporter: colored (default), colored_dots, dots, documentation, doc, null, none, silent;",
+      "or path/to/reporter.rb:ClassName for a custom class (include Verity::Reporter)."
+    ) do |name|
+      Verity.configure { |c| c.reporter = Verity.build_reporter(name) }
+    end
+    o.on(
+      "-w",
+      "--workers COUNT",
+      "Parallel worker processes: a positive integer or cpus (one worker per CPU via Etc.nprocessors)."
+    ) do |v|
+      Verity.configure { |c| c.worker_count = v.strip }
+    end
+    o.on("--order MODE", "Test order: random (default; use --seed to fix RNG) or fingerprint (sorted).") do |v|
+      mode = v.to_s.strip.downcase
+      unless %w[fingerprint random].include?(mode)
+        warn "verity: --order must be fingerprint or random (got #{v.inspect})"
+        exit 2
+      end
+      Verity.configure { |c| c.test_order = mode.to_sym }
+    end
+    o.on("--seed INTEGER", Integer, "RNG seed for shuffled order (printed only when auto-chosen).") do |n|
+      Verity.configure { |c| c.shuffle_seed = n }
+    end
+    o.on("-h", "--help", "Show this help") do
+      puts o
+      exit 0
+    end
+  end.parse!
+
+  if ARGV.any?
+    globs = []
+    filters = []
+    ARGV.each do |raw|
+      if (m = raw.match(/\A(.+):(\d+)\z/))
+        path_part = m[1]
+        line_part = Integer(m[2], 10)
+        abs = File.expand_path(path_part)
+        unless File.file?(abs)
+          warn "verity: #{raw.inspect} — line filter requires an existing file (got #{abs.inspect})"
+          exit 2
+        end
+        globs << abs
+        filters << [abs, line_part]
+      else
+        globs << File.expand_path(raw)
+      end
+    end
+    Verity.configure do |c|
+      c.test_globs = globs.uniq
+      c.location_filters = filters unless filters.empty?
+    end
+  end
+rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
+  warn "verity: #{e.message}"
+  exit 2
+end
+
+begin
+  exit(Verity.run ? 0 : 1)
+rescue ArgumentError => e
+  warn "verity: #{e.message}"
+  exit 2
+end

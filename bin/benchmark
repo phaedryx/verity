@@ -1,0 +1,99 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "optparse"
+require "rbconfig"
+require "bundler/setup"
+
+root = File.expand_path("..", __dir__)
+Dir.chdir(root) or abort("benchmark: cannot chdir to #{root}")
+
+ruby = RbConfig.ruby
+opts = { iterations: 1 }
+OptionParser.new do |o|
+  o.banner = "Usage: benchmark [options]"
+  o.separator ""
+  o.separator "Runs the same three suites as bin/test_all and prints wall-clock timings."
+  o.separator ""
+  o.on("-n", "--iterations N", Integer, "Repeat each suite N times (default: 1)") do |n|
+    opts[:iterations] = n
+  end
+  o.on("-h", "--help", "Show this help") do
+    puts o
+    exit 0
+  end
+end.parse!
+
+bench_iterations = opts[:iterations]
+abort "benchmark: iterations must be >= 1" if bench_iterations < 1
+
+def fmt_sec(s)
+  format("%0.3f", s)
+end
+
+def summarize(samples)
+  return { min: samples.last, max: samples.last, mean: samples.last } if samples.size == 1
+
+  {
+    min: samples.min,
+    max: samples.max,
+    mean: samples.sum / samples.size
+  }
+end
+
+def run_suite(iterations)
+  times = []
+  iterations.times do |i|
+    t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    ok = yield
+    t1 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    abort "benchmark: suite failed (iteration #{i + 1})" unless ok
+
+    times << (t1 - t0)
+  end
+  times
+end
+
+verity_bin = File.join(root, "bin", "verity")
+results = []
+
+results << [
+  "Dogfood (bin/verity)",
+  summarize(run_suite(bench_iterations) do
+    system(ruby, verity_bin)
+  end)
+]
+
+minitest_files = Dir.glob("test/**/*_test.rb").sort
+abort "benchmark: no files matched test/**/*_test.rb" if minitest_files.empty?
+
+results << [
+  "Minitest (test/**/*_test.rb, #{minitest_files.size} files)",
+  summarize(run_suite(bench_iterations) do
+    minitest_files.all? do |path|
+      system(ruby, "-Ilib:test", path)
+    end
+  end)
+]
+
+results << [
+  "RSpec (spec/)",
+  summarize(run_suite(bench_iterations) do
+    system(ruby, "-S", "rspec", "--format", "progress")
+  end)
+]
+
+puts
+puts "Benchmark: #{bench_iterations} iteration(s) per suite, monotonic wall clock (seconds)"
+puts "-" * 72
+results.each do |label, stat|
+  line = format("%-48s %7ss", label, fmt_sec(stat[:mean]))
+  line += format("  (min #{fmt_sec(stat[:min])} .. max #{fmt_sec(stat[:max])})") if bench_iterations > 1
+
+  puts line
+end
+
+total_mean = results.sum { |_, s| s[:mean] }
+puts "-" * 72
+puts format("%-48s %7ss", "Total (sum of suite means)", fmt_sec(total_mean))
+puts

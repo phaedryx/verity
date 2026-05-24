@@ -1,0 +1,44 @@
+# https://docs.rubocop.org/rubocop/cops_style.html#stylestringliterals
+
+AllCops:
+  NewCops: disable
+  TargetRubyVersion: 3.3
+
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+
+Style/StringLiteralsInInterpolation:
+  EnforcedStyle: double_quotes
+
+# Minitest examples are often long single blocks/classes; keep defaults for lib/.
+Metrics/AbcSize:
+  Exclude:
+    - "test/**/*.rb"
+
+Metrics/BlockLength:
+  Exclude:
+    - "test/**/*.rb"
+
+Metrics/ClassLength:
+  Exclude:
+    - "test/**/*.rb"
+
+Metrics/CyclomaticComplexity:
+  Exclude:
+    - "test/**/*.rb"
+
+Metrics/MethodLength:
+  Exclude:
+    - "test/**/*.rb"
+
+Metrics/ModuleLength:
+  Exclude:
+    - "test/**/*.rb"
+
+Metrics/ParameterLists:
+  Exclude:
+    - "test/**/*.rb"
+
+Metrics/PerceivedComplexity:
+  Exclude:
+    - "test/**/*.rb"

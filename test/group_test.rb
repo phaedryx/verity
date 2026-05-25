@@ -60,7 +60,7 @@ class GroupTest < Minitest::Test
     Verity.clear_group_stack!
     ran = []
     Object.new.extend(Verity::DSL).instance_eval do
-      group "WIP", tags: [:skip] do
+      group "WIP", skip: true do
         test "inside" do
           ran << :inside
         end
@@ -78,7 +78,7 @@ class GroupTest < Minitest::Test
     reset_verity_process_state!
     Verity.clear_group_stack!
     Object.new.extend(Verity::DSL).instance_eval do
-      group "Focused block", tags: [:focus] do
+      group "Focused block", focus: true do
         test "in group" do
         end
       end
@@ -95,8 +95,8 @@ class GroupTest < Minitest::Test
     reset_verity_process_state!
     Verity.clear_group_stack!
     Object.new.extend(Verity::DSL).instance_eval do
-      group "A", tags: [:skip] do
-        group "B", tags: [:focus] do
+      group "A", skip: true do
+        group "B", focus: true do
           test "t", tags: [:integration] do
           end
         end
@@ -104,8 +104,9 @@ class GroupTest < Minitest::Test
     end
 
     t = Verity::Registry.all.first
-    assert_equal %i[skip focus integration], Verity.effective_tags(t)
+    assert_equal [:integration], Verity.effective_tags(t)
     assert Verity.skipped?(t)
+    assert Verity.focused?(t)
   end
 
   def test_documentation_reporter_prints_group_headers

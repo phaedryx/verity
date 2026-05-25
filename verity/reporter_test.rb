@@ -45,11 +45,11 @@ test "documentation summary shows skipped line in subprocess" do
     verity_dir = File.join(tmp, "verity")
     FileUtils.mkdir_p(verity_dir)
     File.write(File.join(verity_dir, "only_test.rb"), <<~RUBY)
-      test "skipped_example", tags: [:skip] do
+      test "skipped_example", skip: true do
         raise "nope"
       end
 
-      test "focused", tags: [:focus] do
+      test "focused", focus: true do
         assert true
       end
 

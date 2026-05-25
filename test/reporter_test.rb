@@ -57,7 +57,7 @@ class ReporterTest < Minitest::Test
     skip_test = Verity::Test.new(
       fingerprint: "s.rb:#{'b' * 16}",
       description: "skip me",
-      tags: [:skip],
+      tags: [], skip: true,
       timeout: nil,
       requires: [],
       resources: {},
@@ -70,7 +70,7 @@ class ReporterTest < Minitest::Test
     focus_test = Verity::Test.new(
       fingerprint: "f.rb:#{'c' * 16}",
       description: "focused",
-      tags: [:focus],
+      tags: [], focus: true,
       timeout: nil,
       requires: [],
       resources: {},

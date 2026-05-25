@@ -32,7 +32,7 @@ test "group skip tags apply to nested test" do
   Verity.clear_group_stack!
   ran = []
   Object.new.extend(Verity::DSL).instance_eval do
-    group "WIP", tags: [:skip] do
+    group "WIP", skip: true do
       test "dogfood_skip_inner" do
         ran << :inside
       end
@@ -48,7 +48,7 @@ end
 test "group tags accumulate for effective_tags" do
   Verity.clear_group_stack!
   Object.new.extend(Verity::DSL).instance_eval do
-    group "A", tags: [:skip] do
+    group "A", skip: true do
       group "B", tags: [:slow] do
         test "dogfood_tags_accum", tags: [:integration] do
         end
@@ -57,7 +57,7 @@ test "group tags accumulate for effective_tags" do
   end
   t = Verity::Registry.all.reverse.find { _1.description == "dogfood_tags_accum" }
   assert t
-  assert_equal actual: Verity.effective_tags(t), expected: %i[skip slow integration]
+  assert_equal actual: Verity.effective_tags(t), expected: %i[slow integration]
   assert Verity.skipped?(t)
 end
 

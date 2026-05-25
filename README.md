@@ -99,11 +99,11 @@ When resource resolvers are registered, a worker that finds only tests conflicti
 
 ### A test's outcome
 
-Every executed test resolves to exactly one status. A clean run is `:pass`; a failed assertion (`AssertionError`) is `:fail`; a timeout or any other raised exception is `:error`. Tests tagged `:skip` are never enqueued — they are reported as `:skip` without running.
+Every executed test resolves to exactly one status. A clean run is `:pass`; a failed assertion (`AssertionError`) is `:fail`; a timeout or any other raised exception is `:error`. Tests with `skip: true` are never enqueued — they are reported as `:skip` without running.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Skipped: tagged :skip (test or enclosing group)
+    [*] --> Skipped: skip: true (test or enclosing group)
     [*] --> Running: enqueued and claimed
     Running --> Passed: body completes
     Running --> Failed: AssertionError
@@ -202,20 +202,20 @@ Nest tests under titled sections with **`group`**. Each `test` registers with a 
 
 ```ruby
 group "Authentication", tags: [:integration] do
-  group "sessions", tags: [:focus] do
+  group "sessions", focus: true do
     test "creates a session" do
       # ...
     end
   end
 end
 
-group "WIP", tags: [:skip] do
+group "WIP", skip: true do
   test "not scheduled yet" do
   end
 end
 ```
 
-Tags on a **`group`** apply to **every nested `test`** (and inner groups): they are stored on each test as **`inherited_group_tags`** (outer groups first) and merged with the test’s own **`tags:`** for **`Verity.skipped?`**, **`Verity.focus_tag?`**, and **`Verity.effective_tags`**. **`:skip`** on any ancestor (or on the test) skips the example; **`:focus`** follows the same suite-wide rules as test-level **`:focus`**.
+Descriptive **`tags:`** on a **`group`** cascade to every nested test via **`inherited_group_tags`** (outer groups first), and are combined with the test’s own **`tags:`** by **`Verity.effective_tags`** for filtering and CI labelling. **`skip:`** or **`focus:`** on a **`group`** cascade to the effective `skip`/`focus` of every nested test — a test’s effective value is its own keyword OR any enclosing group’s keyword. **`:skip`** and **`:focus`** are no longer tags; placing them in **`tags:`** has no behavioral effect.
 
 **`Verity::Reporters::DocumentationReporter`** prints new group titles when the path changes (indented like an outline). Dot reporters do not show groups. Custom reporters can read **`result.test.group_path`** and **`result.test.inherited_group_tags`**.
 
@@ -223,33 +223,34 @@ The group stack is cleared before each discovery file is loaded so a stray unclo
 
 ## Tags
 
-- **`tags: [:skip]`** — The example is **not** enqueued in the manifest and does **not** run. It still appears in **`Verity::Registry.all`**. The summary line includes **`N skipped`** when `N > 0`. String `"skip"` in tags is treated the same (normalized with `to_sym`). A **`group`** may use **`tags: [:skip]`**; that applies to all nested tests (see **Grouping**).
-- **`tags: [:focus]`** — If **any** non-skipped registered test has **`:focus`** (including via an enclosing **`group`**), **only** tests that have **`:focus`** in their effective tags are runnable (manifest + direct **`Runner#run`**). If every non-skipped test is focused, the filter does nothing (same as “all focused”). **`Skip` wins:** a test with both **`skip`** and **`focus`** is skipped. When focus narrows the suite, the summary ends with **`(focus)`**.
+- **`skip: true`** — The example is **not** enqueued in the manifest and does **not** run. It still appears in **`Verity::Registry.all`**. The summary line includes **`N skipped`** when `N > 0`. A **`group`** with **`skip: true`** applies to all nested tests (see **Grouping**).
+- **`focus: true`** — If **any** non-skipped test is focused (directly or via an enclosing **`group`**), only focused tests run. If every non-skipped test is focused, the filter is inert. **Skip wins:** a test with both `skip: true` and `focus: true` is skipped. When focus narrows the suite, the summary ends with **`(focus)`**.
 
-How the runnable set is computed: each test's **effective tags** are its enclosing group tags (outer first) plus its own. Skip is evaluated **before** focus — which is why skip wins over focus.
+How the runnable set is computed: each test's `skip` and `focus` fields are effective booleans — the test's own value OR'd with any enclosing group's value. Skip is evaluated **before** focus — which is why skip wins over focus.
 
 ```mermaid
 flowchart TD
-    A["All registered tests"] --> B["effective_tags =<br/>inherited group tags + own tags"]
-    B --> C{"includes :skip?"}
-    C -->|yes| S["excluded<br/>(reported as skipped)"]
-    C -->|no| D["candidate"]
-    D --> E{"any candidate<br/>has :focus?"}
-    E -->|yes| Fy["keep only :focus candidates"]
-    E -->|no| Fn["keep all candidates"]
-    Fy --> RUN["runnable"]
+    A[“All registered tests”] --> C{“test.skip?”}
+    C -->|yes| S[“excluded<br/>(reported as skipped)”]
+    C -->|no| D[“candidate”]
+    D --> E{“any candidate<br/>has focus: true?”}
+    E -->|yes| Fy[“keep only focused candidates”]
+    E -->|no| Fn[“keep all candidates”]
+    Fy --> RUN[“runnable”]
     Fn --> RUN
 ```
 
 ## `Verity::Test` fields
 
-Each registered test is a `Data.define` struct with 12 fields:
+Each registered test is a `Data.define` struct with 14 fields:
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `fingerprint` | `String` | Stable identity hash derived from the block body via Prism AST |
 | `description` | `String` | Human-readable name passed to `test "..."` |
-| `tags` | `Array<Symbol>` | Tags declared on the test itself (e.g. `[:unit, :focus]`) |
+| `skip` | `Boolean` | Effective skip: the test's own `skip:` OR any enclosing group's |
+| `focus` | `Boolean` | Effective focus: the test's own `focus:` OR any enclosing group's |
+| `tags` | `Array<Symbol>` | Descriptive labels for filtering/CI (no reserved behavior) (e.g. `[:unit, :slow]`) |
 | `timeout` | `Float`, `nil` | Optional per-test timeout in seconds |
 | `requires` | `Array` | Declared dependency hints (e.g. `[:active_record]`) |
 | `resources` | `Hash` | Extra keyword args from `test` (e.g. `{ tables: [:users] }`) |

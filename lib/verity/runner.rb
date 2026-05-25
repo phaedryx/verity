@@ -113,8 +113,8 @@ module Verity
     def run_worker(tests, worker_id:)
       without_skip = tests.reject { Verity.skipped?(_1) }
       list =
-        if without_skip.any? { Verity.focus_tag?(_1) }
-          without_skip.select { Verity.focus_tag?(_1) }
+        if without_skip.any? { Verity.focused?(_1) }
+          without_skip.select { Verity.focused?(_1) }
         else
           without_skip
         end

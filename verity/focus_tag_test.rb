@@ -5,11 +5,11 @@ require "tmpdir"
 
 # Dogfood mirror of test/focus_tag_test.rb — no :focus examples registered at load time (would narrow suite).
 
-test "focus_tag? is true when focus in tags" do
+test "focused? is true when focus: true" do
   t = Verity::Test.new(
     fingerprint: "f.rb:#{"f" * 16}",
     description: "f",
-    tags: [:focus],
+    tags: [], focus: true,
     timeout: nil,
     requires: [],
     resources: {},
@@ -19,7 +19,7 @@ test "focus_tag? is true when focus in tags" do
     group_path: [],
     inherited_group_tags: [], group_scopes: []
   )
-  assert Verity.focus_tag?(t)
+  assert Verity.focused?(t)
 end
 
 test "focus_filter_active? false for empty candidates" do
@@ -30,7 +30,7 @@ test "skip wins over focus on same test" do
   t = Verity::Test.new(
     fingerprint: "sf.rb:#{"a" * 16}",
     description: "both",
-    tags: %i[skip focus],
+    tags: [], skip: true, focus: true,
     timeout: nil,
     requires: [],
     resources: {},
@@ -53,7 +53,7 @@ test "verity run honors focus in isolated project" do
         assert false
       end
 
-      test "only", tags: [:focus] do
+      test "only", focus: true do
         assert true
       end
     RUBY

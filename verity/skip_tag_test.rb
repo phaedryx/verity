@@ -22,7 +22,7 @@ test "skipped? and runnable_tests include only non-skipped" do
   t_skip = Verity::Test.new(
     fingerprint: "sk_b.rb:bbbbbbbbbbbbbbbb",
     description: "skipped",
-    tags: [:skip],
+    tags: [], skip: true,
     timeout: nil,
     requires: [],
     resources: {},
@@ -59,7 +59,7 @@ test "runner run only executes non-skipped in explicit list" do
   t_skip = Verity::Test.new(
     fingerprint: "sk_no.rb:bbbbbbbbbbbbbbbb",
     description: "nope",
-    tags: [:skip],
+    tags: [], skip: true,
     timeout: nil,
     requires: [],
     resources: {},
@@ -100,7 +100,7 @@ test "verity run skips tagged examples in isolated project" do
         assert true
       end
 
-      test "two", tags: [:skip] do
+      test "two", skip: true do
         assert false
       end
     RUBY

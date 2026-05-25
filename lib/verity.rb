@@ -23,6 +23,8 @@ module Verity
   #
   # fingerprint          - String content-based identifier for the test body.
   # description          - String human-readable name supplied to the `test` DSL.
+  # skip                 - Boolean effective skip (own value OR any enclosing group).
+  # focus                - Boolean effective focus (own value OR any enclosing group).
   # tags                 - Array of Symbols applied directly to the test.
   # timeout              - Numeric seconds (or nil); enforced by Runner with stdlib Timeout.
   # requires             - Array of Symbols naming shared preconditions.
@@ -34,12 +36,21 @@ module Verity
   # inherited_group_tags - Frozen Array of Symbols from enclosing group tags.
   # group_scopes         - Frozen Array of GroupScope (enclosing groups, outer first).
   Test = Data.define(
-    :fingerprint, :description, :tags, :timeout, :requires, :resources, :file, :line, :fn,
-    :group_path, :inherited_group_tags, :group_scopes
-  )
+    :fingerprint, :description, :skip, :focus, :tags, :timeout, :requires, :resources,
+    :file, :line, :fn, :group_path, :inherited_group_tags, :group_scopes
+  ) do
+    # Provide defaults for the behavioral booleans so existing keyword
+    # constructions that don't set them continue to work. Data does not
+    # support default values directly; a custom initialize supplies them.
+    def initialize(skip: false, focus: false, **rest)
+      super(skip:, focus:, **rest)
+    end
+  end
 
-  # Public: Compute all tags that apply to a test, combining enclosing group
-  # tags with the test's own tags (outer groups first).
+  # Public: Compute the descriptive tags that apply to a test, combining
+  # enclosing group tags with the test's own tags (outer groups first).
+  # Skip and focus are now keyword booleans on Verity::Test and are NOT
+  # reflected here; this method returns descriptive tags only.
   #
   # test - A Verity::Test instance.
   #
@@ -73,28 +84,30 @@ module Verity
     raise ArgumentError, "test timeout must be positive (got #{timeout.inspect})"
   end
 
-  # Public: Check whether a test is tagged with :skip.
+  # Public: Check whether a test is skipped (its own skip: true or inherited
+  # from an enclosing group).
   #
   # test - A Verity::Test instance.
   #
   # Returns true if the test should be skipped.
-  def self.skipped?(test) = effective_tags(test).include?(:skip)
+  def self.skipped?(test) = test.skip
 
-  # Public: Check whether a test is tagged with :focus.
+  # Public: Check whether a test is focused (its own focus: true or inherited
+  # from an enclosing group).
   #
   # test - A Verity::Test instance.
   #
-  # Returns true if the test has the focus tag.
-  def self.focus_tag?(test) = effective_tags(test).include?(:focus)
+  # Returns true if the test is focused.
+  def self.focused?(test) = test.focus
 
   # Public: Collect the tests that should actually execute. Skipped tests are
-  # excluded; when any remaining test has :focus, only focused tests are kept.
+  # excluded; when any remaining test has focus: true, only focused tests are kept.
   #
   # Returns an Array of Verity::Test.
   def self.runnable_tests
     base = Registry.all.reject { skipped?(_1) }
-    base = if base.any? { focus_tag?(_1) }
-      base.select { focus_tag?(_1) }
+    base = if base.any? { focused?(_1) }
+      base.select { focused?(_1) }
     else
       base
     end
@@ -102,7 +115,7 @@ module Verity
   end
 
   # Public: Detect whether focus filtering narrowed the suite — at least one
-  # candidate has :focus and at least one does not.
+  # candidate has focus: true and at least one does not.
   #
   # candidates - Array of Verity::Test (already excluding skipped tests).
   #
@@ -110,7 +123,7 @@ module Verity
   def self.focus_filter_active?(candidates)
     return false if candidates.empty?
 
-    candidates.any? { focus_tag?(_1) } && candidates.any? { !focus_tag?(_1) }
+    candidates.any? { focused?(_1) } && candidates.any? { !focused?(_1) }
   end
 
   # Internal: Keep tests that match any configured location filter (test line
@@ -143,14 +156,18 @@ module Verity
   # Called by DSL#group during test file loading.
   #
   # title - String title for the group.
+  # skip  - Boolean whether to skip this group (default false).
+  # focus - Boolean whether to focus this group (default false).
   # tags  - Array of Symbols (default []).
   # file  - String absolute path of the `group` call site.
   # line  - Integer line of the `group` call.
   #
   # Returns the updated stack Array.
-  def self.push_group(title, tags:, file:, line:)
+  def self.push_group(title, skip:, focus:, tags:, file:, line:)
     entry = {
       title: title.to_s,
+      skip: skip,
+      focus: focus,
       tags: Array(tags).map(&:to_sym),
       file: file,
       line: line
@@ -195,6 +212,28 @@ module Verity
     return [].freeze if stack.nil? || stack.empty?
 
     stack.flat_map { |g| g[:tags] }.freeze
+  end
+
+  # Internal: True when any enclosing group on the current thread's stack was
+  # declared with skip: true.
+  #
+  # Returns a Boolean.
+  def self.group_skip_for_registration
+    stack = Thread.current[:verity_group_stack]
+    return false if stack.nil? || stack.empty?
+
+    stack.any? { |g| g[:skip] }
+  end
+
+  # Internal: True when any enclosing group on the current thread's stack was
+  # declared with focus: true.
+  #
+  # Returns a Boolean.
+  def self.group_focus_for_registration
+    stack = Thread.current[:verity_group_stack]
+    return false if stack.nil? || stack.empty?
+
+    stack.any? { |g| g[:focus] }
   end
 
   # Internal: Reset the current thread's group stack to empty. Called before
@@ -318,16 +357,18 @@ module Verity
     # contribute tags that are inherited by every enclosed test.
     #
     # title - String group name shown in reporter output.
+    # skip  - Boolean whether to skip all tests in this group (default false).
+    # focus - Boolean whether to focus all tests in this group (default false).
     # tags  - Array of Symbols applied to all tests in this group (default []).
     # block - Block containing nested `test` and `group` calls.
     #
     # Raises ArgumentError if no block is given.
-    def group(title, tags: [], &block)
+    def group(title, skip: false, focus: false, tags: [], &block)
       raise ArgumentError, "`group` requires a block" unless block
 
       loc = caller_locations(1, 1).first
       pushed = false
-      Verity.push_group(title, tags: tags, file: loc.path, line: loc.lineno)
+      Verity.push_group(title, skip: skip, focus: focus, tags: tags, file: loc.path, line: loc.lineno)
       pushed = true
       yield
     ensure
@@ -338,7 +379,9 @@ module Verity
     # later by the Runner.
     #
     # description - String human-readable test name.
-    # tags        - Array of Symbols (e.g. :focus, :skip) (default []).
+    # skip        - Boolean whether to skip this test (default false).
+    # focus       - Boolean whether to focus this test (default false).
+    # tags        - Array of Symbols of descriptive labels (e.g. :integration, :smoke) (default []).
     # timeout     - Numeric seconds or nil for no timeout (default nil). If set,
     #               must be a positive finite Numeric (+Complex+ and strings are rejected).
     # requires    - Array of Symbols naming shared preconditions (default []).
@@ -346,7 +389,7 @@ module Verity
     # fn          - Block containing assertions and test logic.
     #
     # Returns the newly registered Verity::Test.
-    def test(description, tags: [], timeout: nil, requires: [], **resources, &fn)
+    def test(description, skip: false, focus: false, tags: [], timeout: nil, requires: [], **resources, &fn)
       Verity.validate_test_timeout!(timeout)
       location = caller_locations(1, 1).first
       file = location.path
@@ -357,6 +400,8 @@ module Verity
         Verity::Test.new(
           fingerprint:,
           description:,
+          skip: skip || Verity.group_skip_for_registration,
+          focus: focus || Verity.group_focus_for_registration,
           tags:,
           timeout:,
           requires:,

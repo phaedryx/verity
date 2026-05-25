@@ -28,7 +28,7 @@ class SkipTagTest < Minitest::Test
     t_skip = Verity::Test.new(
       fingerprint: "b.rb:bbbbbbbbbbbbbbbb",
       description: "skipped",
-      tags: [:skip],
+      tags: [], skip: true,
       timeout: nil,
       requires: [],
       resources: {},
@@ -65,7 +65,7 @@ class SkipTagTest < Minitest::Test
     t_skip = Verity::Test.new(
       fingerprint: "b.rb:bbbbbbbbbbbbbbbb",
       description: "nope",
-      tags: [:skip],
+      tags: [], skip: true,
       timeout: nil,
       requires: [],
       resources: {},
@@ -105,7 +105,7 @@ class SkipTagTest < Minitest::Test
           assert true
         end
 
-        test "two", tags: [:skip] do
+        test "two", skip: true do
           assert false
         end
       RUBY

@@ -11,7 +11,7 @@ RSpec.describe "group_focus (triple suite twin of verity/group_focus_test.rb)" d
       vd = File.join(tmp, "verity")
       FileUtils.mkdir_p(vd)
       File.write(File.join(vd, "only_test.rb"), <<~RUBY)
-        group "Focused block", tags: [:focus] do
+        group "Focused block", focus: true do
           test "inside" do
             assert true
           end

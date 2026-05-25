@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Triple suite: test/group_focus_test.rb · spec/verity/group_focus_spec.rb
+# Triple suite: spec/verity/group_focus_spec.rb (Minitest group-focus coverage lives in test/group_test.rb)
 # Runs in subprocess so `:focus` in this scenario never narrows the rest of dogfood CI.
 
 require "tmpdir"
@@ -12,7 +12,7 @@ test "verity project group focus narrows runnable list" do
     verity_dir = File.join(tmp, "verity")
     FileUtils.mkdir_p(verity_dir)
     File.write(File.join(verity_dir, "only_test.rb"), <<~RUBY)
-      group "Focused block", tags: [:focus] do
+      group "Focused block", focus: true do
         test "inside" do
           assert true
         end

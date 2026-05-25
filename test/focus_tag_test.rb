@@ -75,7 +75,7 @@ class FocusTagTest < Minitest::Test
           assert false
         end
 
-        test "only", tags: [:focus] do
+        test "only", focus: true do
           assert true
         end
       RUBY
@@ -101,7 +101,9 @@ class FocusTagTest < Minitest::Test
     Verity::Test.new(
       fingerprint: "#{desc.gsub(/\s+/, '_')}.rb:#{'a' * 16}",
       description: desc,
-      tags: tags,
+      tags: tags - %i[skip focus],
+      skip: tags.include?(:skip),
+      focus: tags.include?(:focus),
       timeout: nil,
       requires: [],
       resources: {},

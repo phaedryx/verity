@@ -6,11 +6,12 @@ require "spec_helper"
 # no standalone verity/runner_test.rb to avoid wiping the Registry during aggregated dogfood CI.
 
 RSpec.describe Verity::Runner do
-  def make_test(description, tags: [], fn: -> {})
+  def make_test(description, tags: [], skip: false, focus: false, fn: -> {})
     Verity::Test.new(
       fingerprint: "fp_#{description.gsub(/\s+/, "_")}:abcdef0123456789",
       description: description,
       tags: tags,
+      skip: skip, focus: focus,
       timeout: nil,
       requires: [],
       resources: {},
@@ -163,7 +164,7 @@ RSpec.describe Verity::Runner do
       reporter = Verity::Reporters::TestReporter.new
       runner = Verity::Runner.new(reporter: reporter)
 
-      skipped = make_test("skipped", tags: [:skip])
+      skipped = make_test("skipped", skip: true)
       register(skipped)
 
       runner.run([skipped])

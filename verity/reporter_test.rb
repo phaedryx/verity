@@ -37,6 +37,7 @@ test "runner invokes reporter hooks in order for explicit list" do
   assert_equal actual: summary[:errored], expected: 0
   assert_equal actual: summary[:skipped], expected: 0
   refute summary[:focus]
+  refute summary[:tag_filter]
 end
 
 test "documentation summary shows skipped line in subprocess" do

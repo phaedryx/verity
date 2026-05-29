@@ -92,6 +92,7 @@ class SkipTagTest < Minitest::Test
     assert_equal 0, s[:errored]
     assert_equal 1, s[:skipped]
     refute s[:focus]
+    refute s[:tag_filter]
     assert_equal [:ok], ran
   end
 

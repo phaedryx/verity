@@ -46,6 +46,7 @@ class ReporterTest < Minitest::Test
     assert_equal 0, summary[:errored]
     assert_equal 0, summary[:skipped]
     refute summary[:focus]
+    refute summary[:tag_filter]
   end
 
   def test_skip_and_focus_appear_in_documentation_summary_line
@@ -104,6 +105,34 @@ class ReporterTest < Minitest::Test
     out = io.string
     assert_match(/1 skipped/, out)
     assert_match(/\(focus\)/, out)
+    refute_match(/\(tags\)/, out)
+  end
+
+  def test_runner_summary_reports_tag_filter_when_configured
+    reset_verity_process_state!
+    Verity.configure { |c| c.included_tags = [:slow] }
+
+    reporter = Verity::Reporters::TestReporter.new
+    t1 = Verity::Test.new(
+      fingerprint: "a.rb:#{'a' * 16}",
+      description: "one",
+      tags: [],
+      timeout: nil,
+      requires: [],
+      resources: {},
+      file: "a.rb",
+      line: 1,
+      fn: -> {},
+      group_path: [],
+      inherited_group_tags: [], group_scopes: []
+    )
+    Verity::Registry.register(t1)
+    Verity::Runner.new(reporter: reporter).run([t1])
+
+    summary = reporter.run_finishes.first[:summary]
+    assert summary[:tag_filter]
+
+    reset_verity_process_state!
   end
 
   def test_configure_reporter_is_used_by_verity_run

@@ -37,6 +37,31 @@ begin
       end
       Verity.configure { |c| c.test_order = mode.to_sym }
     end
+    o.on(
+      "-t",
+      "--tag NAME",
+      "Run only tests whose effective tags include NAME (see group/test tags:).",
+      "Repeat for OR semantics: a test runs if it has any of the named tags."
+    ) do |raw|
+      tok = Verity.parse_tag_filter_token(raw)
+      unless tok
+        warn "verity: --tag requires a non-empty name (got #{raw.inspect})"
+        exit 2
+      end
+      Verity.configure { |c| c.included_tags += [tok] }
+    end
+    o.on(
+      "--exclude-tag NAME",
+      "Do not run tests whose effective tags include NAME (after any --tag narrowing).",
+      "Repeat to exclude when any of the named tags is present."
+    ) do |raw|
+      tok = Verity.parse_tag_filter_token(raw)
+      unless tok
+        warn "verity: --exclude-tag requires a non-empty name (got #{raw.inspect})"
+        exit 2
+      end
+      Verity.configure { |c| c.excluded_tags += [tok] }
+    end
     o.on("--seed INTEGER", Integer, "RNG seed for shuffled order (printed only when auto-chosen).") do |n|
       Verity.configure { |c| c.shuffle_seed = n }
     end

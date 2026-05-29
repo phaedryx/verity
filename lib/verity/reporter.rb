@@ -35,7 +35,7 @@ module Verity
     # Public: Called once after all tests in a worker have completed.
     #
     # summary   - Hash with :total, :passed, :failed, :errored, :skipped
-    #             (Integers) and :focus (Boolean).
+    #             (Integers); :focus and :tag_filter (Booleans when active).
     # worker_id - Integer manifest worker id.
     #
     # Returns nothing.

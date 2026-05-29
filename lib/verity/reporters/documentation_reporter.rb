@@ -74,6 +74,7 @@ module Verity
           line += ", #{sk} skipped" if sk.positive?
         end
         line += " (focus)" if summary[:focus]
+        line += " (tags)" if summary[:tag_filter]
         @io.puts line
       end
 

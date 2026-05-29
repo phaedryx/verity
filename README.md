@@ -47,6 +47,14 @@ verity -w cpus              # one worker per CPU (Etc.nprocessors)
 verity --workers 2 verity/  # combine with positional args
 ```
 
+Filter descriptive tags (`tags:` / group tags) — flags can be repeated; names are Symbols (`slow` ↔ `:slow`):
+
+```bash
+verity -t slow                    # shorthand for --tag; run only matching tests (OR across tags)
+verity --tag integration --tag slow
+verity --exclude-tag wip          # skip tests that carry this tag (overlapping exclude wins over include)
+```
+
 Exit status is **0** if every claimed test passes, **1** otherwise (`exit` in `bin/verity` mirrors that). **2** is used for invalid CLI options — an unknown flag, a bad `--order` value, or a `path:LINE` filter pointing at a missing file — and for an `ArgumentError` raised during the run (e.g. a `:memory:` manifest combined with `--workers > 1`).
 
 ```bash
@@ -124,6 +132,8 @@ Verity.configure do |c|
   c.test_globs = ["verity/**/*_test.rb"]   # default; set to your Verity discovery globs
   # c.worker_count = :cpus                 # default; or a positive Integer, or "cpus" / :cpu / "cpu"
   # c.reporter = Verity::Reporters::ColoredDotsReporter.new($stdout)  # default
+  # c.included_tags = [:integration]  # optional: only examples whose effective tags match (OR)
+  # c.excluded_tags = [:wip]          # optional: drop matching examples after inclusion
 end
 ```
 
@@ -131,6 +141,8 @@ end
 - **`manifest_path`** — SQLite database path (default **`verity/manifest.db`**), or `":memory:"` for an in-memory DB (only with **`worker_count` 1**).
 - **`worker_count`** — number of parallel worker processes (`Integer` or decimal string), or **`:cpus`** / **`:cpu`** / **`"cpus"`** / **`"cpu"`** to use `Etc.nprocessors` (minimum **1**). Resolved at run time via **`Configuration#resolved_worker_count`**. Parallel runs need a **file** manifest (not `":memory:"`) and **`Kernel#fork`**.
 - **`reporter`** — object that includes `Verity::Reporter` (default: `Verity::Reporters::ColoredDotsReporter` on `$stdout`). See **Custom reporters** below.
+- **`included_tags`** — optional `Array` of `Symbol`; when non-empty, only examples whose **`Verity.effective_tags`** intersect this list run (**OR**: any listed tag matches). Default `[]`.
+- **`excluded_tags`** — optional `Array` of `Symbol`; examples with any matching effective tag are removed after inclusion narrowing. Default `[]`.
 
 `Verity.run(worker_id: 0)` loads all `test_files`, migrates the manifest, replaces the `tests` table from the registry, then runs the manifest-driven runner for that worker.
 
@@ -163,7 +175,7 @@ class MyReporter
   end
 
   def on_run_finish(summary:, worker_id:)
-    # summary: :total, :passed, :failed, :errored, :skipped, :focus
+    # summary: :total, :passed, :failed, :errored, :skipped, :focus, :tag_filter
   end
 
   # Optional: after Verity.run with worker_count > 1 (parent process only)
@@ -225,8 +237,9 @@ The group stack is cleared before each discovery file is loaded so a stray unclo
 
 - **`skip: true`** — The example is **not** enqueued in the manifest and does **not** run. It still appears in **`Verity::Registry.all`**. The summary line includes **`N skipped`** when `N > 0`. A **`group`** with **`skip: true`** applies to all nested tests (see **Grouping**).
 - **`focus: true`** — If **any** non-skipped test is focused (directly or via an enclosing **`group`**), only focused tests run. If every non-skipped test is focused, the filter is inert. **Skip wins:** a test with both `skip: true` and `focus: true` is skipped. When focus narrows the suite, the summary ends with **`(focus)`**.
+- **Descriptive tag filters** — `Verity.effective_tags(test)` merges `group tags:` outer-first with the example’s **`tags:`**. Narrow with **`Verity.configure`** **`included_tags`** / **`excluded_tags`**, or CLI **`-t`** / **`--tag`** (adds included tags) and **`--exclude-tag`**. Inclusion is **OR** across configured tags (the example runs if **any** filter tag is present among its effective tags); exclusion removes an example when **any** excluded tag matches, and overlaps **exclude over include**.
 
-How the runnable set is computed: each test's `skip` and `focus` fields are effective booleans — the test's own value OR'd with any enclosing group's value. Skip is evaluated **before** focus — which is why skip wins over focus.
+How the runnable set is computed: each test's `skip` and `focus` fields are effective booleans — the test's own value OR'd with any enclosing group's value. Skip is evaluated **before** focus. Tag inclusion and exclusion (`included_tags`, `excluded_tags`) apply **after** focus narrowing. Location filters (**`path:LINE`**) apply last. Dot and documentation summaries append **`(tags)`** when either tag filter list is configured.
 
 ```mermaid
 flowchart TD

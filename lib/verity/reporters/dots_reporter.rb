@@ -36,6 +36,7 @@ module Verity
         line = "\n\n#{t} tests: #{p} passed, #{f} failed, #{e} errored"
         line += ", #{summary[:skipped]} skipped" if summary[:skipped].to_i.positive?
         line += " (focus)" if summary[:focus]
+        line += " (tags)" if summary[:tag_filter]
         @io.puts line
       end
 

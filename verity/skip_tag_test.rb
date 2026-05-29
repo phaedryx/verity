@@ -87,6 +87,7 @@ test "runner run only executes non-skipped in explicit list" do
   assert_equal actual: s[:errored], expected: 0
   assert_equal actual: s[:skipped], expected: 1
   refute s[:focus]
+  refute s[:tag_filter]
   assert_equal actual: ran, expected: [:ok]
 end
 

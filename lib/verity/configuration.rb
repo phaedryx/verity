@@ -39,8 +39,24 @@ module Verity
     # Public: Optional Array of [absolute_path, Integer line] pairs (from CLI
     # file:line). When non-empty, only tests whose #line matches, or that have
     # an enclosing #group opened on that file:line, are runnable.
+    #
+    # Public: Optional Arrays of Symbols for tag-based narrowing (see README).
+    # #included_tags — when non-empty, a test runs only if Verity.effective_tags
+    # intersects this list (any listed tag matches, OR semantics). #excluded_tags
+    # — tests with any matching effective tag are dropped; applied after inclusion.
+    # Assignments are normalized via Verity.normalize_tag_list, so mixed
+    # Symbol/String input is accepted and blank entries are dropped.
     attr_accessor :manifest_path, :test_globs, :worker_count, :reporter,
                   :test_order, :shuffle_seed, :location_filters
+    attr_reader :included_tags, :excluded_tags
+
+    def included_tags=(list)
+      @included_tags = Verity.normalize_tag_list(list)
+    end
+
+    def excluded_tags=(list)
+      @excluded_tags = Verity.normalize_tag_list(list)
+    end
 
     def initialize
       set_defaults!
@@ -54,6 +70,8 @@ module Verity
       @test_order = :random
       @shuffle_seed = nil
       @location_filters = []
+      @included_tags = []
+      @excluded_tags = []
     end
 
     # Public: Resolve worker_count to an Integer, expanding :cpus to the

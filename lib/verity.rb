@@ -103,14 +103,23 @@ module Verity
   # Public: Collect the tests that should actually execute. Skipped tests are
   # excluded; when any remaining test has focus: true, only focused tests are kept.
   #
+  # warn - When true, emit a stderr warning if a non-empty included_tags filter
+  #        excludes every remaining candidate. Off by default so this stays a
+  #        pure query for callers like tests and tooling.
+  #
   # Returns an Array of Verity::Test.
-  def self.runnable_tests
+  def self.runnable_tests(warn: false)
     base = Registry.all.reject { skipped?(_1) }
     base = if base.any? { focused?(_1) }
       base.select { focused?(_1) }
     else
       base
     end
+    if warn && tag_inclusion_yields_empty?(base)
+      inc = configuration.included_tags
+      Kernel.warn "verity: no tests matched --tag filter (#{inc.map(&:inspect).join(', ')})"
+    end
+    base = filter_by_tag_preferences(base)
     filter_by_location_filters(base)
   end
 
@@ -124,6 +133,70 @@ module Verity
     return false if candidates.empty?
 
     candidates.any? { focused?(_1) } && candidates.any? { !focused?(_1) }
+  end
+
+  # Internal: Narrow tests by Configuration#included_tags and #excluded_tags.
+  # Inclusion uses OR semantics: with multiple included tags, a test matches if
+  # its effective_tags include any listed tag. Exclusion removes a test when
+  # effective_tags include any excluded tag (exclude wins when both overlap).
+  # Pure — no I/O; callers handle empty-filter warnings (see #runnable_tests).
+  #
+  # tests - Array of Verity::Test (typically after skip/focus narrowing).
+  #
+  # Returns a filtered Array.
+  def self.filter_by_tag_preferences(tests)
+    inc = configuration.included_tags
+    exc = configuration.excluded_tags
+
+    filtered = tests
+    filtered = filtered.select { |t| tag_intersects?(effective_tags(t), inc) } unless inc.empty?
+    filtered = filtered.reject { |t| tag_intersects?(effective_tags(t), exc) } unless exc.empty?
+    filtered
+  end
+
+  # Public: Normalize a single tag value (CLI String, config Symbol, etc.) to a
+  # Symbol, or nil when the value is blank after stripping. Strings get a
+  # leading ":" trimmed so `":foo"` and `"foo"` are equivalent.
+  def self.parse_tag_filter_token(raw)
+    case raw
+    when Symbol
+      s = raw.to_s.strip
+      s.empty? ? nil : s.to_sym
+    when String
+      s = raw.strip.sub(/\A:/, "")
+      s.empty? ? nil : s.to_sym
+    else
+      raw.respond_to?(:to_sym) ? raw.to_sym : nil
+    end
+  end
+
+  # Public: Normalize an arbitrary list into a deduplicated Array of Symbols.
+  # Blank/nil entries are dropped. Used by Configuration writers so callers can
+  # assign mixed Symbol/String input and reads stay normalized.
+  def self.normalize_tag_list(list)
+    Array(list).map { |raw| parse_tag_filter_token(raw) }.compact.uniq
+  end
+
+  # Internal: True when tag arrays intersect (any shared Symbol).
+  def self.tag_intersects?(effective, required)
+    (Array(effective).map(&:to_sym) & required).any?
+  end
+  private_class_method :tag_intersects?
+
+  # Internal: True when included_tags is non-empty and excludes every candidate.
+  # Used by #runnable_tests to surface the "you filtered out everything"
+  # warning once, at the orchestration boundary.
+  def self.tag_inclusion_yields_empty?(tests)
+    inc = configuration.included_tags
+    return false if inc.empty? || tests.empty?
+
+    tests.none? { |t| tag_intersects?(effective_tags(t), inc) }
+  end
+  private_class_method :tag_inclusion_yields_empty?
+
+  # Public: True when the configuration requests tag inclusion or exclusion.
+  def self.tag_filter_configured?
+    configuration.included_tags.any? || configuration.excluded_tags.any?
   end
 
   # Internal: Keep tests that match any configured location filter (test line
@@ -533,7 +606,7 @@ module Verity
   #
   # Returns Array of Verity::Test.
   def self.ordered_runnable_tests
-    list = runnable_tests
+    list = runnable_tests(warn: true)
     order = configuration.test_order
     unless %i[fingerprint random].include?(order)
       raise ArgumentError,

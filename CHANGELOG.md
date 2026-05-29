@@ -6,6 +6,15 @@ pre-1.0 and may make breaking changes between minor versions.
 
 ## [Unreleased]
 
+### Added
+
+- Tag-based narrowing via `Verity.configure` `included_tags` / `excluded_tags`
+  (group-inherited labels included through `Verity.effective_tags`). New CLI
+  flags `--tag` / `-t` and `--exclude-tag` are repeatable; inclusion is OR
+  across the list and exclusion wins when a tag appears in both. Summaries
+  append `(tags)` when a tag filter is active; the `on_run_finish` summary
+  hash gains `:tag_filter`.
+
 ### Changed (breaking)
 
 - `skip` and `focus` are now explicit keyword arguments on `test` and `group`

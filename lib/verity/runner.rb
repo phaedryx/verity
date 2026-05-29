@@ -150,7 +150,8 @@ module Verity
         failed: results.count { |r| r.status == :fail },
         errored: results.count { |r| r.status == :error },
         skipped: skipped,
-        focus: focus
+        focus: focus,
+        tag_filter: Verity.tag_filter_configured?
       }
     end
 

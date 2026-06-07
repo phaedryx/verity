@@ -8,6 +8,19 @@ pre-1.0 and may make breaking changes between minor versions.
 
 ### Added
 
+- **`Verity::Rails`** (`require "verity/rails"`) — optional Rails adapter for
+  day-to-day app testing: transactional test hooks, ActiveRecord reconnect after
+  fork, per-worker `TEST_ENV_NUMBER` setup, YAML fixture accessors (`users(:one)`),
+  `integration_session` for request specs, and mixing in
+  `ActiveSupport::Testing::TimeHelpers`, `ActiveJob::TestHelper`, and
+  `ActionMailer::TestHelper` when present. See `examples/rails/` and README.
+- **`Verity::Railtie`** — auto-loaded in Rails apps; defines `rake verity` /
+  `rake verity:run` (pass options after `--`).
+- **`rails generate verity:install`** — scaffolds `test/verity_helper.rb`,
+  `bin/verity`, and `test/verity/sample_test.rb`.
+- **`Verity::CLI`** — shared option parsing for `bin/verity` and the rake task.
+- `before_worker_start` hooks receive the worker id when invoked from the
+  manifest runner.
 - Tag-based narrowing via `Verity.configure` `included_tags` / `excluded_tags`
   (group-inherited labels included through `Verity.effective_tags`). New CLI
   flags `--tag` / `-t` and `--exclude-tag` are repeatable; inclusion is OR

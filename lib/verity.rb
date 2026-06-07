@@ -491,9 +491,10 @@ module Verity
   end
 
   # Public: Register a callback invoked once per worker process before any
-  # tests run (useful for DB setup, connection pooling, etc.).
+  # tests run (useful for DB setup, connection pooling, etc.). The block receives
+  # the worker id (Integer) when invoked from the manifest runner.
   #
-  # block - Proc to execute.
+  # block - Proc to execute, optionally accepting worker_id.
   #
   # Returns the updated callback Array.
   def self.before_worker_start(&block) = hooks[:before_worker_start] << block

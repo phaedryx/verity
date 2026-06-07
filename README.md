@@ -301,6 +301,69 @@ Example triplet:
 - [`test/assertions_test.rb`](test/assertions_test.rb)
 - [`spec/verity/assertions_spec.rb`](spec/verity/assertions_spec.rb)
 
+## Rails applications
+
+Verity ships a **Railtie** (auto-loaded in Rails apps), **`bin/rails generate verity:install`**, and **`rake verity`** / **`rake verity:run`**.
+
+1. Add `gem "verity"` to the Gemfile (test group).
+2. Run `bin/rails generate verity:install` — creates `test/verity_helper.rb`, `bin/verity`, and a sample test under `test/verity/`.
+3. Write tests in `test/verity/**/*_test.rb` (see [`examples/rails/test/verity/users_test.rb`](examples/rails/test/verity/users_test.rb)).
+
+```bash
+bin/verity                         # app binstub (loads test/verity_helper.rb)
+bundle exec verity                 # gem executable (configure helper yourself)
+bin/rake verity                    # boots :environment, loads helper, runs suite
+bin/rake verity -- -w 4 -t slow    # pass CLI flags after --
+```
+
+The generator template matches the manual setup below. You can still copy [`examples/rails/test/verity_helper.rb`](examples/rails/test/verity_helper.rb) if you prefer.
+
+```ruby
+# test/verity_helper.rb
+ENV["RAILS_ENV"] ||= "test"
+require_relative "../config/environment"
+require "verity/rails"
+
+Verity.configure do |c|
+  c.test_globs = ["test/verity/**/*_test.rb"]
+  c.manifest_path = "tmp/verity_manifest.db"
+end
+
+Verity::Rails.configure do |c|
+  c.transactional_tests = true      # AR transaction per test, rolled back in after_test
+  c.reconnect_after_fork = true     # disconnect pools in each forked worker
+  c.per_worker_database = false     # set true for Rails-style myapp_test2 DBs
+  c.fixture_sets = [:users]         # or :all
+  c.delegate_http_methods = false   # true defines top-level get/post/… helpers
+end
+
+Verity::Rails.install!
+```
+
+Run with `bin/verity`, `bin/rake verity`, or `bundle exec verity` (load the helper first when using the gem executable alone).
+
+**Database isolation:** `transactional_tests` uses `begin_transaction(joinable: false)` /
+`rollback_transaction` on the primary connection. For shared-database parallel runs,
+register table conflicts (see example helper) or enable `per_worker_database` and
+prepare one test database per worker (`db:test:prepare` in CI).
+
+**Fixtures:** Loaded once per worker; accessor methods match Minitest (`users(:alice)`).
+
+**Integration tests:** Use `integration_session.get "/path"` (or enable `delegate_http_methods`).
+
+**Helpers:** When Rails gems are loaded, `travel_to`, `perform_enqueued_jobs`, and mail
+assertions are available in top-level `test` blocks; `after_test` runs `travel_back` and
+`clear_enqueued_jobs`.
+
+System/Capybara tests are not integrated — keep those on `ActionDispatch::SystemTestCase`
+or run Verity with `worker_count: 1` and a dedicated `:system` tag.
+
+### Limitations
+
+**Global Object pollution.** `Verity::Rails.install!` mixes helper methods directly into `Object`, making them available in every `test` block without explicit `include`. The polluted methods are: `travel_to`, `travel_back` (ActiveSupport::Testing::TimeHelpers); `perform_enqueued_jobs`, `assert_enqueued_with`, `clear_enqueued_jobs` (ActiveJob::TestHelper); `integration_session`, `reset_integration_session!`; and `get`, `post`, `patch`, `put`, `delete`, `head` when `delegate_http_methods: true`.
+
+Name collisions with application code — a model method named `travel_to`, an ActiveRecord scope named `delete`, or a module that defines `get` — are **silent**: the first-defined method wins and the other is masked, producing wrong behavior with no error. System tests and controller tests are not supported; use Rails' built-in `ActionDispatch::SystemTestCase` / `ActionController::TestCase` for those.
+
 ## Design notes
 
 See [verity-notes.md](verity-notes.md) for schema, fingerprints, and planned execution model.

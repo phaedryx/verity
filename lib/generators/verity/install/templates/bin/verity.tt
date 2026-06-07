@@ -1,0 +1,9 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "bundler/setup"
+load File.expand_path("../test/verity_helper.rb", __dir__)
+require "verity/cli"
+
+status = Verity::CLI.run(ARGV.dup)
+exit(status)

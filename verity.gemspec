@@ -27,7 +27,7 @@ Gem::Specification.new do |spec|
     "bug_tracker_uri" => "#{spec.homepage}/issues"
   }
 
-  spec.files = Dir["lib/**/*.rb", "bin/*", "LICENSE", "README.md"]
+  spec.files = Dir["lib/**/*.rb", "lib/**/*.rake", "lib/generators/**/*", "bin/*", "LICENSE", "README.md"]
   spec.bindir        = "bin"
   spec.executables   = spec.files.grep(%r{\Abin/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
@@ -36,6 +36,8 @@ Gem::Specification.new do |spec|
   spec.add_dependency "prism",  "~> 1.0"
 
   spec.add_development_dependency "minitest"
+  spec.add_development_dependency "railties", ">= 7.1"
+  spec.add_development_dependency "activerecord", ">= 7.1"
   spec.add_development_dependency "rubocop", "~> 1.75"
   spec.add_development_dependency "rspec"
 end

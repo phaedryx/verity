@@ -1,0 +1,5 @@
+# frozen_string_literal: true
+
+test "sample Verity test" do
+  assert true
+end

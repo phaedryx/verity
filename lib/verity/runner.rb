@@ -42,7 +42,7 @@ module Verity
     #
     # Returns true if every executed test passed.
     def run_manifest(manifest, worker_id:)
-      Verity.hooks[:before_worker_start].each(&:call)
+      Verity.hooks[:before_worker_start].each { |hook| hook.call(worker_id) }
 
       @reporter.on_run_start(total: manifest.example_count, worker_id: worker_id)
 
@@ -180,7 +180,11 @@ module Verity
       rescue => e
         result = Result.new(test:, status: :error, error: e)
       ensure
-        Verity.hooks[:after_test].each(&:call)
+        Verity.hooks[:after_test].each do |hook|
+          hook.call
+        rescue => e
+          warn "verity: after_test hook raised #{e.class}: #{e.message}"
+        end
       end
       result
     end

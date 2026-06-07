@@ -7,6 +7,7 @@ module VerityTestHelper
     Verity::Registry.clear
     Verity.hooks.each_value(&:clear)
     Verity.resource_resolvers.clear
+    Verity::Rails.reset! if defined?(Verity::Rails)
     Verity.configure { |c| c.test_order = :fingerprint } # quiet, deterministic Minitest runs
   end
 
